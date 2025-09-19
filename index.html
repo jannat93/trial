@@ -106,6 +106,9 @@
         canvas.height = window.innerHeight;
 
         let isPolluted = false;
+        let lastKnownAzimuth = null;
+        let lastKnownAltitude = null;
+        const fov = 60; // Field of view in degrees
 
         // Inlined star catalog data
         const stars = [
@@ -145,6 +148,7 @@
                 video.style.display = 'block';
                 startBtn.style.display = 'none';
                 togglePollutionBtn.style.display = 'inline-block';
+                showMessage("Calibrating AR view. Please wait...");
             } catch (err) {
                 showMessage("Camera access denied! Please enable camera permissions.");
                 return;
@@ -158,6 +162,19 @@
             }, (error) => {
                 showMessage("Geolocation failed. Please enable location services.");
             });
+        });
+
+        // Listen for device orientation changes
+        window.addEventListener('deviceorientation', function(event) {
+            // event.alpha is the compass heading (0-360 degrees)
+            // event.beta is the front-back tilt (-180 to 180 degrees)
+            // event.gamma is the left-right tilt (-90 to 90 degrees)
+            if (event.alpha !== null && event.beta !== null && event.gamma !== null) {
+                // Calculate azimuth and altitude based on device orientation
+                // Simple mapping for demonstration purposes
+                lastKnownAzimuth = 360 - event.alpha; // 360 minus alpha for a compass heading
+                lastKnownAltitude = event.beta + 90;
+            }
         });
 
         togglePollutionBtn.addEventListener("click", () => {
@@ -175,75 +192,80 @@
             function animate() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+                if (lastKnownAzimuth === null) {
+                    showMessage("Move your phone to calibrate the AR view.");
+                    requestAnimationFrame(animate);
+                    return;
+                }
+
                 const time = Astronomy.MakeTime(new Date());
                 const observer = new Astronomy.Observer(lat, lon, 0);
 
+                const currentAzimuth = lastKnownAzimuth;
+                const currentAltitude = lastKnownAltitude;
+
+                const centerAzimuth = currentAzimuth;
+                const centerAltitude = currentAltitude;
+
+                // Determine the visible range based on field of view (FOV)
+                const azimuthRange = fov;
+                const altitudeRange = fov;
+
                 // --- Draw celestial objects based on view mode ---
-                if (!isPolluted) {
-                    // Draw objects visible to the naked eye
-                    stars.forEach(star => {
-                        const eq = new Astronomy.Equatorial(star.ra, star.dec, 1);
-                        const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
+                const objectsToDraw = isPolluted ? deepSkyObjects : stars;
 
-                        if (hor.altitude > 0) { // visible
-                            const x = canvas.width / 2 + hor.azimuth * canvas.width / 360;
-                            const y = canvas.height / 2 - hor.altitude * canvas.height / 180;
+                objectsToDraw.forEach(obj => {
+                    const eq = new Astronomy.Equatorial(obj.ra, obj.dec, 1);
+                    const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
 
-                            const size = Math.max(1, 6 - star.magnitude);
+                    if (hor.altitude > 0) { // Check if object is above the horizon
+                        const azDiff = (hor.azimuth - centerAzimuth + 360) % 360;
+                        const altDiff = hor.altitude - centerAltitude;
+                        
+                        // Convert differences to screen coordinates
+                        const x = canvas.width / 2 + (azDiff * canvas.width / azimuthRange);
+                        const y = canvas.height / 2 - (altDiff * canvas.height / altitudeRange);
+                        
+                        // Check if the object is within the screen's field of view
+                        if (x > 0 && x < canvas.width && y > 0 && y < canvas.height) {
+                            const size = Math.max(1, (isPolluted ? obj.size : 6 - obj.magnitude));
                             ctx.beginPath();
                             ctx.arc(x, y, size, 0, Math.PI * 2);
-                            ctx.fillStyle = "white";
+                            // Change color to red for polluted view objects
+                            ctx.fillStyle = isPolluted ? "rgba(255, 0, 0, 0.8)" : "white";
                             ctx.fill();
 
-                            // Add label
-                            ctx.fillStyle = "white";
-                            ctx.font = "12px Arial";
-                            ctx.fillText(star.name, x + size + 2, y);
-                        }
-                    });
-
-                    // Draw the Moon
-                    const moonEq = Astronomy.Equator("Moon", time, observer, true, true);
-                    const moonHor = Astronomy.Horizon(time, observer, moonEq.ra, moonEq.dec, "normal");
-
-                    if (moonHor.altitude > 0) {
-                        const moonX = canvas.width / 2 + moonHor.azimuth * canvas.width / 360;
-                        const moonY = canvas.height / 2 - moonHor.altitude * canvas.height / 180;
-                        ctx.fillStyle = "rgba(255,255,200,0.9)";
-                        ctx.beginPath();
-                        ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
-                        ctx.fill();
-
-                        // Add label
-                        ctx.fillStyle = "white";
-                        ctx.font = "14px Arial";
-                        ctx.fillText("The Moon", moonX + 28, moonY);
-                    }
-
-                } else {
-                    // Draw objects not visible to the naked eye
-                    deepSkyObjects.forEach(obj => {
-                        const eq = new Astronomy.Equatorial(obj.ra, obj.dec, 1);
-                        const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
-
-                        if (hor.altitude > 0) { // visible
-                            const x = canvas.width / 2 + hor.azimuth * canvas.width / 360;
-                            const y = canvas.height / 2 - hor.altitude * canvas.height / 180;
-
-                            const size = Math.max(5, obj.size);
-                            ctx.beginPath();
-                            ctx.arc(x, y, size, 0, Math.PI * 2);
-                            ctx.fillStyle = "rgba(173, 216, 230, 0.7)"; // Light blue for nebulae
-                            ctx.fill();
-                            
                             // Add label
                             ctx.fillStyle = "white";
                             ctx.font = "12px Arial";
                             ctx.fillText(obj.name, x + size + 2, y);
                         }
-                    });
+                    }
+                });
+
+                // Draw the Moon (always visible in clean view)
+                if (!isPolluted) {
+                    const moonEq = Astronomy.Equator("Moon", time, observer, true, true);
+                    const moonHor = Astronomy.Horizon(time, observer, moonEq.ra, moonEq.dec, "normal");
+                    
+                    const moonAzDiff = (moonHor.azimuth - centerAzimuth + 360) % 360;
+                    const moonAltDiff = moonHor.altitude - centerAltitude;
+                    
+                    const moonX = canvas.width / 2 + (moonAzDiff * canvas.width / azimuthRange);
+                    const moonY = canvas.height / 2 - (moonAltDiff * canvas.height / altitudeRange);
+                    
+                    if (moonX > 0 && moonX < canvas.width && moonY > 0 && moonY < canvas.height) {
+                        ctx.fillStyle = "rgba(255,255,200,0.9)";
+                        ctx.beginPath();
+                        ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.fillStyle = "white";
+                        ctx.font = "14px Arial";
+                        ctx.fillText("The Moon", moonX + 28, moonY);
+                    }
                 }
-                
+
                 requestAnimationFrame(animate);
             }
             animate();
