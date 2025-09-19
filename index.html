@@ -6,12 +6,10 @@
 <title>AR Sky 🌌</title>
 <script src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.min.js"></script>
 <style>
-    body, html {
-        margin: 0; padding: 0;
-        width: 100%; height: 100%;
-        overflow: hidden;
+    html, body {
+        margin: 0; padding: 0; width: 100%; height: 100%;
+        overflow: hidden; font-family: 'Segoe UI', sans-serif;
         background: radial-gradient(circle at bottom, #000010, #000000);
-        font-family: 'Segoe UI', sans-serif;
         color: white;
     }
     #camera-container { position: relative; width: 100%; height: 100%; }
@@ -41,7 +39,7 @@
 </div>
 <div id="controls">
     <button id="startBtn">Start AR 🌌</button>
-    <button id="toggleBtn" style="display:none;">Show Deep Sky</button>
+    <button id="toggleBtn" style="display:none;">Toggle Deep Sky</button>
 </div>
 <div class="message-box" id="msgBox"><p id="msgText"></p></div>
 
@@ -57,11 +55,11 @@ const toggleBtn = document.getElementById('toggleBtn');
 const msgBox = document.getElementById('msgBox');
 const msgText = document.getElementById('msgText');
 
-let isDeepSky = false;
+let showDeepSky = true;
 let azimuth = 0, altitude = 0;
-const fov = 60;
+const fov = 60; // degrees
 
-// Simple star & deep-sky data
+// Stars (bright stars for naked eye)
 const stars = [
     {name:"Sirius", ra:101.2875, dec:-16.7161, mag:-1.46},
     {name:"Vega", ra:279.2347, dec:38.7837, mag:0.03},
@@ -69,11 +67,14 @@ const stars = [
     {name:"Rigel", ra:78.6345, dec:-8.2016, mag:0.12},
     {name:"Capella", ra:79.1723, dec:45.9979, mag:0.08}
 ];
+
+// Deep-sky objects (in red)
 const deepSky = [
-    {name:"Andromeda", ra:10.6847, dec:41.269, size:30},
+    {name:"Andromeda Galaxy", ra:10.6847, dec:41.269, size:30},
     {name:"Orion Nebula", ra:83.8016, dec:-5.3916, size:25},
-    {name:"Pleiades", ra:56.75, dec:24.1, size:20},
-    {name:"Crab Nebula", ra:83.6331, dec:22.0145, size:15}
+    {name:"Pleiades Cluster", ra:56.75, dec:24.1, size:20},
+    {name:"Crab Nebula", ra:83.6331, dec:22.0145, size:15},
+    {name:"Milky Way Center", ra:266.4168, dec:-29.0078, size:35}
 ];
 
 function showMsg(text){
@@ -82,19 +83,20 @@ function showMsg(text){
     setTimeout(()=>msgBox.style.display='none',3000);
 }
 
-// Mobile orientation
+// Device orientation
 window.addEventListener('deviceorientation', e=>{
     if(e.alpha!==null){ azimuth = (360 - e.alpha)%360; altitude = e.beta; }
 });
 
+// Toggle deep-sky mode
 toggleBtn.addEventListener('click', ()=>{
-    isDeepSky = !isDeepSky;
-    toggleBtn.textContent = isDeepSky ? 'Show Visible Sky' : 'Show Deep Sky';
-    showMsg(isDeepSky ? 'Deep Sky Mode' : 'Visible Sky Mode');
+    showDeepSky = !showDeepSky;
+    toggleBtn.textContent = showDeepSky ? 'Hide Deep Sky' : 'Show Deep Sky';
+    showMsg(showDeepSky ? 'Deep Sky Mode' : 'Visible Sky Mode');
 });
 
 // Draw function
-function draw(lat, lon){
+function drawSky(lat, lon){
     const observer = new Astronomy.Observer(lat, lon, 0);
     function animate(){
         ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -133,15 +135,15 @@ function draw(lat, lon){
             }
         }
 
-        if(isDeepSky){
-            deepSky.forEach(obj=>drawObj(obj.name,obj.ra,obj.dec,obj.size,'rgba(255,0,0,0.8)'));
-        }else{
-            // Sun & Moon
-            const sunEq = Astronomy.Equator('Sun',time,observer,true,true);
-            drawObj('Sun',sunEq.ra,sunEq.dec,25,'rgba(255,255,0,0.9)');
-            const moonEq = Astronomy.Equator('Moon',time,observer,true,true);
-            drawObj('Moon',moonEq.ra,moonEq.dec,20,'rgba(200,200,255,0.9)');
-            stars.forEach(s=>drawObj(s.name,s.ra,s.dec,Math.max(5,10-s.mag),'rgba(255,0,255,0.8)'));
+        // Visible sky
+        const sunEq = Astronomy.Equator('Sun',time,observer,true,true);
+        drawObj('Sun',sunEq.ra,sunEq.dec,25,'rgba(255,255,0,0.9)');
+        const moonEq = Astronomy.Equator('Moon',time,observer,true,true);
+        drawObj('Moon',moonEq.ra,moonEq.dec,20,'rgba(200,200,255,0.9)');
+        stars.forEach(s=>drawObj(s.name,s.ra,s.dec,Math.max(5,10-s.mag),'rgba(0,255,255,0.8)'));
+
+        if(showDeepSky){
+            deepSky.forEach(d=>drawObj(d.name,d.ra,d.dec,d.size,'rgba(255,0,0,0.8)'));
         }
 
         requestAnimationFrame(animate);
@@ -157,12 +159,12 @@ startBtn.addEventListener('click', async ()=>{
         video.style.display='block';
         startBtn.style.display='none';
         toggleBtn.style.display='inline-block';
-        showMsg('Move device to calibrate AR');
+        showMsg('Point device to the sky to see celestial objects');
         navigator.geolocation.getCurrentPosition(pos=>{
-            draw(pos.coords.latitude,pos.coords.longitude);
+            drawSky(pos.coords.latitude,pos.coords.longitude);
         }, err=>{
-            showMsg('Geo failed, using 0,0');
-            draw(0,0);
+            showMsg('Geolocation failed, defaulting to 0,0');
+            drawSky(0,0);
         });
     }catch(e){ showMsg('Camera access denied'); }
 });
