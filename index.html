@@ -1,333 +1,244 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Last Sky 🌌</title>
-    <script src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.min.js"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background: radial-gradient(circle at bottom, #000010, #000000);
-            color: white;
-            height: 100vh;
-        }
-
-        #camera-container {
-            position: relative;
-            width: 100%;
-            height: 100%;
-        }
-
-        #camera {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            z-index: 0;
-            display: none; /* Hide until camera starts */
-        }
-
-        #sky-overlay {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-        }
-
-        #controls {
-            position: absolute;
-            bottom: 15px;
-            width: 100%;
-            text-align: center;
-            z-index: 2;
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        button {
-            background: rgba(0, 0, 0, 0.6);
-            border: 1px solid white;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            font-size: 18px;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-
-        button:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .message-box {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            padding: 20px;
-            background-color: rgba(0, 0, 0, 0.8);
-            border-radius: 10px;
-            color: white;
-            text-align: center;
-            z-index: 10;
-            display: none;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>The Last Sky 🌌</title>
+  <script src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      color: white;
+    }
+    #camera-container {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+    }
+    #camera {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      display: none;
+    }
+    #sky-overlay {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    #controls {
+      position: absolute;
+      bottom: 15px;
+      width: 100%;
+      text-align: center;
+      z-index: 2;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    button {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid white;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .message-box {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 10px;
+      color: white;
+      text-align: center;
+      z-index: 10;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-    <div id="camera-container">
-        <video id="camera" autoplay playsinline></video>
-        <canvas id="sky-overlay"></canvas>
-    </div>
+  <div id="camera-container">
+    <video id="camera" autoplay playsinline></video>
+    <canvas id="sky-overlay"></canvas>
+  </div>
 
-    <div id="controls">
-        <button id="start-btn">🌌 Start Sky AR</button>
-        <button id="toggle-pollution-btn" style="display: none;">Show Objects Not Visible to Naked Eye</button>
-    </div>
+  <div id="controls">
+    <button id="start-btn">🌌 Start Sky AR</button>
+    <button id="toggle-pollution-btn" style="display: none;">
+      Show Objects Not Visible to Naked Eye
+    </button>
+  </div>
 
-    <div id="message-box" class="message-box">
-        <p id="message-text"></p>
-    </div>
+  <div id="message-box" class="message-box">
+    <p id="message-text"></p>
+  </div>
 
-    <script>
-        const video = document.getElementById("camera");
-        const canvas = document.getElementById("sky-overlay");
-        const ctx = canvas.getContext("2d");
-        const startBtn = document.getElementById("start-btn");
-        const togglePollutionBtn = document.getElementById("toggle-pollution-btn");
-        const messageBox = document.getElementById("message-box");
-        const messageText = document.getElementById("message-text");
+  <script>
+    const video = document.getElementById("camera");
+    const canvas = document.getElementById("sky-overlay");
+    const ctx = canvas.getContext("2d");
+    const startBtn = document.getElementById("start-btn");
+    const togglePollutionBtn = document.getElementById("toggle-pollution-btn");
+    const messageBox = document.getElementById("message-box");
+    const messageText = document.getElementById("message-text");
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-        let isPolluted = false;
-        let lastKnownAzimuth = null;
-        let lastKnownAltitude = null;
-        const fov = 60; // Field of view in degrees
+    let isPolluted = false;
+    let lastKnownAzimuth = 180;   // start looking south
+    let lastKnownAltitude = 45;   // mid sky
+    const fov = 60; // degrees
 
-        // Celestial objects visible to the naked eye (including the Sun)
-        const stars = [
-            { "name": "Sirius", "ra": 101.2875, "dec": -16.7161, "magnitude": -1.46 },
-            { "name": "Canopus", "ra": 95.9879, "dec": -52.6957, "magnitude": -0.74 },
-            { "name": "Arcturus", "ra": 213.9154, "dec": 19.1825, "magnitude": -0.05 },
-            { "name": "Vega", "ra": 279.2347, "dec": 38.7837, "magnitude": 0.03 },
-            { "name": "Capella", "ra": 79.1723, "dec": 45.9979, "magnitude": 0.08 },
-            { "name": "Rigel", "ra": 78.6345, "dec": -8.2016, "magnitude": 0.12 },
-            { "name": "Procyon", "ra": 114.8255, "dec": 5.2250, "magnitude": 0.34 },
-            { "name": "Betelgeuse", "ra": 88.7929, "dec": 7.4071, "magnitude": 0.42 }
-            // The Sun will be drawn separately due to its unique characteristics
-        ];
+    const stars = [
+      { name: "Sirius", ra: 101.2875, dec: -16.7161, magnitude: -1.46 },
+      { name: "Canopus", ra: 95.9879, dec: -52.6957, magnitude: -0.74 },
+      { name: "Arcturus", ra: 213.9154, dec: 19.1825, magnitude: -0.05 },
+      { name: "Vega", ra: 279.2347, dec: 38.7837, magnitude: 0.03 },
+      { name: "Capella", ra: 79.1723, dec: 45.9979, magnitude: 0.08 },
+      { name: "Rigel", ra: 78.6345, dec: -8.2016, magnitude: 0.12 },
+      { name: "Procyon", ra: 114.8255, dec: 5.2250, magnitude: 0.34 },
+      { name: "Betelgeuse", ra: 88.7929, dec: 7.4071, magnitude: 0.42 }
+    ];
 
-        // Celestial objects not visible to the naked eye
-        const deepSkyObjects = [
-            { "name": "Andromeda Galaxy", "ra": 10.6847, "dec": 41.2690, "magnitude": 3.44, "size": 30 },
-            { "name": "Orion Nebula", "ra": 83.8016, "dec": -5.3916, "magnitude": 4.0, "size": 25 },
-            { "name": "Pleiades", "ra": 56.75, "dec": 24.1, "magnitude": 1.6, "size": 20 },
-            { "name": "Crab Nebula", "ra": 83.6331, "dec": 22.0145, "magnitude": 8.4, "size": 15 },
-            { "name": "Ring Nebula", "ra": 283.442, "dec": 33.017, "magnitude": 8.8, "size": 10 }
-        ];
+    const deepSkyObjects = [
+      { name: "Andromeda Galaxy", ra: 10.6847, dec: 41.2690, magnitude: 3.44, size: 20 },
+      { name: "Orion Nebula", ra: 83.8016, dec: -5.3916, magnitude: 4.0, size: 18 },
+      { name: "Pleiades", ra: 56.75, dec: 24.1, magnitude: 1.6, size: 15 },
+      { name: "Crab Nebula", ra: 83.6331, dec: 22.0145, magnitude: 8.4, size: 12 },
+      { name: "Ring Nebula", ra: 283.442, dec: 33.017, magnitude: 8.8, size: 10 }
+    ];
 
-        function showMessage(text) {
-            messageText.textContent = text;
-            messageBox.style.display = "block";
-            setTimeout(() => {
-                messageBox.style.display = "none";
-            }, 3000);
+    function showMessage(text) {
+      messageText.textContent = text;
+      messageBox.style.display = "block";
+      setTimeout(() => (messageBox.style.display = "none"), 2500);
+    }
+
+    startBtn.addEventListener("click", async () => {
+      if (typeof DeviceOrientationEvent.requestPermission === "function") {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        if (permission === "granted") startAR();
+        else showMessage("Please allow motion sensor access!");
+      } else startAR();
+    });
+
+    async function startAR() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" }
+        });
+        video.srcObject = stream;
+        video.style.display = "block";
+        startBtn.style.display = "none";
+        togglePollutionBtn.style.display = "inline-block";
+        showMessage("Move your phone to calibrate view.");
+      } catch (err) {
+        showMessage("Camera access denied!");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        pos => drawSky(pos.coords.latitude, pos.coords.longitude),
+        () => {
+          showMessage("Using default location 0,0");
+          drawSky(0, 0);
+        }
+      );
+    }
+
+    window.addEventListener("deviceorientation", e => {
+      if (e.alpha !== null && e.beta !== null) {
+        lastKnownAzimuth = (360 - e.alpha) % 360;
+        lastKnownAltitude = e.beta - 45; // rough calibration
+      }
+    });
+
+    togglePollutionBtn.addEventListener("click", () => {
+      isPolluted = !isPolluted;
+      togglePollutionBtn.textContent = isPolluted
+        ? "Show Visible Sky"
+        : "Show Objects Not Visible to Naked Eye";
+      showMessage(
+        isPolluted
+          ? "Showing deep sky objects 🌌"
+          : "Showing naked-eye sky ✨"
+      );
+    });
+
+    function drawSky(lat, lon) {
+      function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const time = Astronomy.MakeTime(new Date());
+        const observer = new Astronomy.Observer(lat, lon, 0);
+
+        // Draw crosshair
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.beginPath();
+        ctx.moveTo(cx - 15, cy);
+        ctx.lineTo(cx + 15, cy);
+        ctx.moveTo(cx, cy - 15);
+        ctx.lineTo(cx, cy + 15);
+        ctx.stroke();
+
+        function drawObject(name, ra, dec, color, size) {
+          const hor = Astronomy.Horizon(time, observer, ra, dec, "normal");
+
+          if (hor.altitude > 0) {
+            let azDiff = hor.azimuth - lastKnownAzimuth;
+            if (azDiff > 180) azDiff -= 360;
+            if (azDiff < -180) azDiff += 360;
+
+            let altDiff = hor.altitude - lastKnownAltitude;
+
+            const x = cx + (azDiff / (fov / 2)) * (canvas.width / 2);
+            const y = cy - (altDiff / (fov / 2)) * (canvas.height / 2);
+
+            if (x > 0 && x < canvas.width && y > 0 && y < canvas.height) {
+              ctx.beginPath();
+              ctx.arc(x, y, size, 0, Math.PI * 2);
+              ctx.fillStyle = color;
+              ctx.fill();
+              ctx.fillStyle = "white";
+              ctx.font = "14px Arial";
+              ctx.fillText(name, x + size + 5, y + 5);
+            }
+          }
         }
 
-        startBtn.addEventListener("click", async () => {
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                const permissionState = await DeviceOrientationEvent.requestPermission();
-                if (permissionState === 'granted') {
-                    startAR();
-                } else {
-                    showMessage("Device motion access denied. Please enable motion sensors in your browser settings.");
-                }
-            } else {
-                // For browsers that don't support requestPermission()
-                startAR();
-            }
-        });
+        if (!isPolluted) {
+          const sun = Astronomy.Equator("Sun", time, observer, true, true);
+          drawObject("Sun", sun.ra, sun.dec, "yellow", 20);
 
-        async function startAR() {
-            // Start camera
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                video.srcObject = stream;
-                video.style.display = 'block';
-                startBtn.style.display = 'none';
-                togglePollutionBtn.style.display = 'inline-block';
-                showMessage("Calibrating AR view. Please move your phone to get started.");
-            } catch (err) {
-                showMessage("Camera access denied! Please enable camera permissions.");
-                return;
-            }
+          const moon = Astronomy.Equator("Moon", time, observer, true, true);
+          drawObject("Moon", moon.ra, moon.dec, "orange", 15);
 
-            // Get user location
-            navigator.geolocation.getCurrentPosition(pos => {
-                const lat = pos.coords.latitude;
-                const lon = pos.coords.longitude;
-                drawSky(lat, lon);
-            }, (error) => {
-                showMessage("Geolocation failed. Please enable location services. Defaulting to 0,0.");
-                drawSky(0, 0); // Use default if geolocation fails
-            });
+          stars.forEach(s =>
+            drawObject(s.name, s.ra, s.dec, "red", Math.max(4, 8 - s.magnitude))
+          );
+        } else {
+          deepSkyObjects.forEach(d =>
+            drawObject(d.name, d.ra, d.dec, "red", d.size / 3)
+          );
         }
-        
-        // Listen for device orientation changes
-        window.addEventListener('deviceorientation', function(event) {
-            if (event.alpha !== null && event.beta !== null && event.gamma !== null) {
-                // event.alpha is the compass heading (0-360, 0 is North)
-                // We want it to match astronomical azimuth (0 is North)
-                // Some devices have alpha as 0 for North, some for South.
-                // The (360 - event.alpha) % 360 is a common adjustment for webkit
-                lastKnownAzimuth = (360 - event.alpha) % 360; 
-                // event.beta is front-back tilt (-180 to 180). 0 is flat. 90 is pointing up.
-                // event.gamma is left-right tilt (-90 to 90).
-                // For altitude, beta + 90 often works to get 0-180 (0 is down, 90 is horizon, 180 is up)
-                // We typically want 0-90 for horizon to zenith
-                // A simplified approach: assume beta=0 is roughly horizontal view, beta=90 is vertical up.
-                // This will need calibration, but for a start:
-                lastKnownAltitude = event.beta; // This value is relative to device.
-                                                // For a better AR, this needs proper rotation matrix conversion.
-                                                // For now, let's keep it simple and assume a base orientation.
-                                                // It usually means device is looking "forward" when beta is near 0.
-                                                // The horizon calculations expect altitude 0-90.
-                                                // Let's use a simplified approach for demonstration.
-                                                // A more robust solution requires converting device coordinates to horizon.
-                
-                // For demonstration, let's try to map beta to -90 (down) to +90 (up) relative to horizon
-                // A phone flat on a table (screen up) has beta 0.
-                // Pointing horizontally, beta is near 0. Pointing up, beta moves to 90. Pointing down to -90.
-                // Astronomy.Horizon returns 0-90 for altitude. Let's adjust for this.
-                // If beta is from -90 (pointing down) to +90 (pointing up):
-                // Altitude = beta + 90 would map -90->0 (down), 0->90 (horizon?), 90->180 (up).
-                // Let's try: lastKnownAltitude = Math.max(0, event.beta);
-                // This is a complex area - proper device motion fusion is needed for accurate alt/az.
-                // For a basic AR, assume a "level" device means looking at horizon.
-                // Let's make an assumption for simplicity that `event.beta` directly maps to altitude around the horizon
-                // This is a rough estimate and would need robust motion sensor fusion for accuracy.
-                lastKnownAltitude = event.beta; // Keep it as event.beta, and we'll see if the projection works.
-                                                // It will require the user to hold the device in a consistent way.
-            }
-        });
 
-        togglePollutionBtn.addEventListener("click", () => {
-            isPolluted = !isPolluted;
-            if (isPolluted) {
-                togglePollutionBtn.textContent = 'Show Visible Sky';
-                showMessage("Viewing objects not visible to the naked eye.");
-            } else {
-                togglePollutionBtn.textContent = 'Show Objects Not Visible to Naked Eye';
-                showMessage("Viewing objects visible to the naked eye.");
-            }
-        });
-
-        function drawSky(lat, lon) {
-            function animate() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                if (lastKnownAzimuth === null || lastKnownAltitude === null) {
-                    showMessage("Move your phone to calibrate the AR view.");
-                    requestAnimationFrame(animate);
-                    return;
-                }
-
-                // Draw central crosshair
-                const centerX = canvas.width / 2;
-                const centerY = canvas.height / 2;
-                ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(centerX - 15, centerY);
-                ctx.lineTo(centerX + 15, centerY);
-                ctx.moveTo(centerX, centerY - 15);
-                ctx.lineTo(centerX, centerY + 15);
-                ctx.stroke();
-
-                const time = Astronomy.MakeTime(new Date());
-                const observer = new Astronomy.Observer(lat, lon, 0);
-
-                const currentAzimuth = lastKnownAzimuth;
-                const currentAltitude = lastKnownAltitude; // Using device beta directly
-
-                // Helper function to draw a celestial object
-                function drawObject(name, ra, dec, color, size, isNakedEye = true) {
-                    const eq = new Astronomy.Equatorial(ra, dec, 1);
-                    const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
-
-                    // Only draw if above the horizon and within a reasonable "view" for altitude
-                    // The device orientation 'altitude' (beta) is raw, so this mapping needs care.
-                    // For now, let's simply check if object is above celestial horizon (hor.altitude > 0)
-                    // and then project it based on device's perceived 'altitude'
-                    if (hor.altitude > 0) {
-                        let azDiff = hor.azimuth - currentAzimuth;
-                        if (azDiff > 180) {
-                            azDiff -= 360;
-                        } else if (azDiff < -180) {
-                            azDiff += 360;
-                        }
-                        
-                        // We need a proper mapping from hor.altitude (0-90) to device's currentAltitude (beta, e.g., -90 to 90)
-                        // This is a simplification and the core of why AR calibration is hard.
-                        // Let's assume currentAltitude (beta) maps roughly to the center of the screen's vertical view.
-                        // So, we calculate the difference from the target altitude to the *center of the screen's* perceived altitude.
-                        // A rough map might be: hor.altitude 90 (zenith) to device beta 90 (pointing up)
-                        //                      hor.altitude 0 (horizon) to device beta 0 (pointing horizontal)
-                        // So, a simple difference might work if beta is somewhat calibrated:
-                        const altDiff = hor.altitude - currentAltitude; // This assumes a linear mapping, which is imperfect.
-                        
-                        // Convert differences to screen coordinates using a simple perspective projection
-                        const x = canvas.width / 2 + (azDiff / fov) * canvas.width;
-                        const y = canvas.height / 2 - (altDiff / fov) * canvas.height;
-                        
-                        // Check if the object is within the screen's field of view
-                        if (x > 0 && x < canvas.width && y > 0 && y < canvas.height) {
-                            ctx.beginPath();
-                            ctx.arc(x, y, size, 0, Math.PI * 2);
-                            ctx.fillStyle = color;
-                            ctx.fill();
-                            ctx.strokeStyle = color; // Border same color for now
-                            ctx.lineWidth = 2;
-                            ctx.stroke();
-
-                            ctx.fillStyle = "white";
-                            ctx.font = `${Math.max(12, size/2 + 4)}px Arial`; // Dynamic font size
-                            ctx.fillText(name, x + size + 5, y + 5);
-                        }
-                    }
-                }
-
-                // --- Draw celestial objects based on view mode ---
-                if (!isPolluted) { // Visible sky
-                    // Draw the Sun
-                    const sunEq = Astronomy.Equator("Sun", time, observer, true, true);
-                    drawObject("The Sun", sunEq.ra, sunEq.dec, "rgba(255, 200, 0, 0.9)", 35, true); // Large yellow circle
-
-                    // Draw the Moon
-                    const moonEq = Astronomy.Equator("Moon", time, observer, true, true);
-                    drawObject("The Moon", moonEq.ra, moonEq.dec, "rgba(255, 0, 0, 0.9)", 25, true); // Red circle
-
-                    // Draw stars
-                    stars.forEach(obj => {
-                        drawObject(obj.name, obj.ra, obj.dec, "rgba(255, 0, 0, 0.8)", Math.max(5, 10 - obj.magnitude), true); // Red circles
-                    });
-                } else { // Objects not visible to the naked eye (deep sky)
-                    deepSkyObjects.forEach(obj => {
-                        drawObject(obj.name, obj.ra, obj.dec, "rgba(255, 0, 0, 0.8)", obj.size, false); // Red circles
-                    });
-                }
-
-                requestAnimationFrame(animate);
-            }
-            animate();
-        }
-    </script>
+        requestAnimationFrame(animate);
+      }
+      animate();
+    }
+  </script>
 </body>
 </html>
