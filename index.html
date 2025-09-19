@@ -213,7 +213,7 @@ function eulerToAzAlt(alpha, beta, gamma, screenOrient=0){
   const R = [
     [ ca*cg - sa*sb*sg, -ca*sg - sa*sb*cg, -sa*cb ],
     [ sa*cg + ca*sb*sg, -sa*sg + ca*sb*cg, ca*cb ],
-    [ cb*sg,             cb*cg,             -sb    ]
+    [ cb*sg,              cb*cg,            -sb     ]
   ];
 
   // forward device vector (0,0,-1) -> world = -third column of R
@@ -494,7 +494,6 @@ sAlt.addEventListener('input', ()=> { sAltV.textContent = sAlt.value; });
 */
 simWrap.style.display = 'block';
 showMessage('Tap Start AR to enable camera and sensors — or use simulator sliders.');
-
 requestAnimationFrame(drawLoop);
 </script>
 </body>
