@@ -58,6 +58,7 @@
             cursor: pointer;
             transition: 0.3s;
         }
+
         button:hover {
             background: rgba(255, 255, 255, 0.2);
         }
@@ -85,7 +86,7 @@
 
     <div id="controls">
         <button id="start-btn">🌌 Start Sky AR</button>
-        <button id="toggle-pollution-btn" style="display: none;">Show Polluted View</button>
+        <button id="toggle-pollution-btn" style="display: none;">Show Objects Not Visible to Naked Eye</button>
     </div>
 
     <div id="message-box" class="message-box">
@@ -115,7 +116,17 @@
             { "name": "Capella", "ra": 79.1723, "dec": 45.9979, "magnitude": 0.08 },
             { "name": "Rigel", "ra": 78.6345, "dec": -8.2016, "magnitude": 0.12 },
             { "name": "Procyon", "ra": 114.8255, "dec": 5.2250, "magnitude": 0.34 },
-            { "name": "Betelgeuse", "ra": 88.7929, "dec": 7.4071, "magnitude": 0.42 }
+            { "name": "Betelgeuse", "ra": 88.7929, "dec": 7.4071, "magnitude": 0.42 },
+            { "name": "The Sun", "ra": 0, "dec": 0, "magnitude": -26.74 }
+        ];
+
+        // Celestial objects not visible to the naked eye
+        const deepSkyObjects = [
+            { "name": "Andromeda Galaxy", "ra": 10.6847, "dec": 41.2690, "magnitude": 3.44, "size": 30 },
+            { "name": "Orion Nebula", "ra": 83.8016, "dec": -5.3916, "magnitude": 4.0, "size": 25 },
+            { "name": "Pleiades", "ra": 56.75, "dec": 24.1, "magnitude": 1.6, "size": 20 },
+            { "name": "Crab Nebula", "ra": 83.6331, "dec": 22.0145, "magnitude": 8.4, "size": 15 },
+            { "name": "Ring Nebula", "ra": 283.442, "dec": 33.017, "magnitude": 8.8, "size": 10 }
         ];
 
         function showMessage(text) {
@@ -152,11 +163,11 @@
         togglePollutionBtn.addEventListener("click", () => {
             isPolluted = !isPolluted;
             if (isPolluted) {
-                togglePollutionBtn.textContent = 'Show Clear View';
-                showMessage("Polluted view activated. Only the brightest objects are visible.");
+                togglePollutionBtn.textContent = 'Show Visible Sky';
+                showMessage("Viewing objects not visible to the naked eye.");
             } else {
-                togglePollutionBtn.textContent = 'Show Polluted View';
-                showMessage("Clear view activated. All celestial objects are visible.");
+                togglePollutionBtn.textContent = 'Show Objects Not Visible to Naked Eye';
+                showMessage("Viewing objects visible to the naked eye.");
             }
         });
 
@@ -167,50 +178,72 @@
                 const time = Astronomy.MakeTime(new Date());
                 const observer = new Astronomy.Observer(lat, lon, 0);
 
-                // --- Draw stars ---
-                stars.forEach(star => {
-                    if (isPolluted && star.magnitude > 1.0) {
-                        return; // Hide dim stars in polluted view
-                    }
+                // --- Draw celestial objects based on view mode ---
+                if (!isPolluted) {
+                    // Draw objects visible to the naked eye
+                    stars.forEach(star => {
+                        const eq = new Astronomy.Equatorial(star.ra, star.dec, 1);
+                        const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
 
-                    const eq = new Astronomy.Equatorial(star.ra, star.dec, 1);
-                    const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
+                        if (hor.altitude > 0) { // visible
+                            const x = canvas.width / 2 + hor.azimuth * canvas.width / 360;
+                            const y = canvas.height / 2 - hor.altitude * canvas.height / 180;
 
-                    if (hor.altitude > 0) { // visible
-                        const x = canvas.width / 2 + hor.azimuth * canvas.width / 360;
-                        const y = canvas.height / 2 - hor.altitude * canvas.height / 180;
+                            const size = Math.max(1, 6 - star.magnitude);
+                            ctx.beginPath();
+                            ctx.arc(x, y, size, 0, Math.PI * 2);
+                            ctx.fillStyle = "white";
+                            ctx.fill();
 
-                        const size = Math.max(1, 6 - star.magnitude); // smaller for dim stars
+                            // Add label
+                            ctx.fillStyle = "white";
+                            ctx.font = "12px Arial";
+                            ctx.fillText(star.name, x + size + 2, y);
+                        }
+                    });
+
+                    // Draw the Moon
+                    const moonEq = Astronomy.Equator("Moon", time, observer, true, true);
+                    const moonHor = Astronomy.Horizon(time, observer, moonEq.ra, moonEq.dec, "normal");
+
+                    if (moonHor.altitude > 0) {
+                        const moonX = canvas.width / 2 + moonHor.azimuth * canvas.width / 360;
+                        const moonY = canvas.height / 2 - moonHor.altitude * canvas.height / 180;
+                        ctx.fillStyle = "rgba(255,255,200,0.9)";
                         ctx.beginPath();
-                        ctx.arc(x, y, size, 0, Math.PI * 2);
-                        ctx.fillStyle = isPolluted ? "rgba(255,255,255,0.5)" : "white";
+                        ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
                         ctx.fill();
 
                         // Add label
                         ctx.fillStyle = "white";
-                        ctx.font = "12px Arial";
-                        ctx.fillText(star.name, x + size + 2, y);
+                        ctx.font = "14px Arial";
+                        ctx.fillText("The Moon", moonX + 28, moonY);
                     }
-                });
 
-                // --- Draw Moon ---
-                const moonEq = Astronomy.Equator("Moon", time, observer, true, true);
-                const moonHor = Astronomy.Horizon(time, observer, moonEq.ra, moonEq.dec, "normal");
+                } else {
+                    // Draw objects not visible to the naked eye
+                    deepSkyObjects.forEach(obj => {
+                        const eq = new Astronomy.Equatorial(obj.ra, obj.dec, 1);
+                        const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
 
-                if (moonHor.altitude > 0) {
-                    const moonX = canvas.width / 2 + moonHor.azimuth * canvas.width / 360;
-                    const moonY = canvas.height / 2 - moonHor.altitude * canvas.height / 180;
-                    ctx.fillStyle = "rgba(255,255,200,0.9)";
-                    ctx.beginPath();
-                    ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
-                    ctx.fill();
+                        if (hor.altitude > 0) { // visible
+                            const x = canvas.width / 2 + hor.azimuth * canvas.width / 360;
+                            const y = canvas.height / 2 - hor.altitude * canvas.height / 180;
 
-                    // Add label
-                    ctx.fillStyle = "white";
-                    ctx.font = "14px Arial";
-                    ctx.fillText("The Moon", moonX + 28, moonY);
+                            const size = Math.max(5, obj.size);
+                            ctx.beginPath();
+                            ctx.arc(x, y, size, 0, Math.PI * 2);
+                            ctx.fillStyle = "rgba(173, 216, 230, 0.7)"; // Light blue for nebulae
+                            ctx.fill();
+                            
+                            // Add label
+                            ctx.fillStyle = "white";
+                            ctx.font = "12px Arial";
+                            ctx.fillText(obj.name, x + size + 2, y);
+                        }
+                    });
                 }
-
+                
                 requestAnimationFrame(animate);
             }
             animate();
