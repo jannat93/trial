@@ -1,244 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>The Last Sky 🌌</title>
-  <script src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.min.js"></script>
+  <meta charset="UTF-8">
+  <title>AR Sky Test</title>
+  <script src="https://unpkg.com/astronomy-engine/astronomy.browser.js"></script>
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background: black;
-      color: white;
-    }
-    #camera-container {
-      position: relative;
-      width: 100%;
-      height: 100vh;
-    }
-    #camera {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      z-index: 0;
-      display: none;
-    }
-    #sky-overlay {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      z-index: 1;
-    }
-    #controls {
-      position: absolute;
-      bottom: 15px;
-      width: 100%;
-      text-align: center;
-      z-index: 2;
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-    }
-    button {
-      background: rgba(0, 0, 0, 0.6);
-      border: 1px solid white;
-      color: white;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    .message-box {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      padding: 20px;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 10px;
-      color: white;
-      text-align: center;
-      z-index: 10;
-      display: none;
-    }
+    body { margin: 0; background: black; }
+    canvas { display: block; width: 100vw; height: 100vh; }
   </style>
 </head>
 <body>
-  <div id="camera-container">
-    <video id="camera" autoplay playsinline></video>
-    <canvas id="sky-overlay"></canvas>
-  </div>
-
-  <div id="controls">
-    <button id="start-btn">🌌 Start Sky AR</button>
-    <button id="toggle-pollution-btn" style="display: none;">
-      Show Objects Not Visible to Naked Eye
-    </button>
-  </div>
-
-  <div id="message-box" class="message-box">
-    <p id="message-text"></p>
-  </div>
+  <canvas id="sky"></canvas>
 
   <script>
-    const video = document.getElementById("camera");
-    const canvas = document.getElementById("sky-overlay");
+    const canvas = document.getElementById("sky");
     const ctx = canvas.getContext("2d");
-    const startBtn = document.getElementById("start-btn");
-    const togglePollutionBtn = document.getElementById("toggle-pollution-btn");
-    const messageBox = document.getElementById("message-box");
-    const messageText = document.getElementById("message-text");
 
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    let isPolluted = false;
-    let lastKnownAzimuth = 180;   // start looking south
-    let lastKnownAltitude = 45;   // mid sky
-    const fov = 60; // degrees
-
-    const stars = [
-      { name: "Sirius", ra: 101.2875, dec: -16.7161, magnitude: -1.46 },
-      { name: "Canopus", ra: 95.9879, dec: -52.6957, magnitude: -0.74 },
-      { name: "Arcturus", ra: 213.9154, dec: 19.1825, magnitude: -0.05 },
-      { name: "Vega", ra: 279.2347, dec: 38.7837, magnitude: 0.03 },
-      { name: "Capella", ra: 79.1723, dec: 45.9979, magnitude: 0.08 },
-      { name: "Rigel", ra: 78.6345, dec: -8.2016, magnitude: 0.12 },
-      { name: "Procyon", ra: 114.8255, dec: 5.2250, magnitude: 0.34 },
-      { name: "Betelgeuse", ra: 88.7929, dec: 7.4071, magnitude: 0.42 }
-    ];
-
-    const deepSkyObjects = [
-      { name: "Andromeda Galaxy", ra: 10.6847, dec: 41.2690, magnitude: 3.44, size: 20 },
-      { name: "Orion Nebula", ra: 83.8016, dec: -5.3916, magnitude: 4.0, size: 18 },
-      { name: "Pleiades", ra: 56.75, dec: 24.1, magnitude: 1.6, size: 15 },
-      { name: "Crab Nebula", ra: 83.6331, dec: 22.0145, magnitude: 8.4, size: 12 },
-      { name: "Ring Nebula", ra: 283.442, dec: 33.017, magnitude: 8.8, size: 10 }
-    ];
-
-    function showMessage(text) {
-      messageText.textContent = text;
-      messageBox.style.display = "block";
-      setTimeout(() => (messageBox.style.display = "none"), 2500);
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     }
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
 
-    startBtn.addEventListener("click", async () => {
-      if (typeof DeviceOrientationEvent.requestPermission === "function") {
-        const permission = await DeviceOrientationEvent.requestPermission();
-        if (permission === "granted") startAR();
-        else showMessage("Please allow motion sensor access!");
-      } else startAR();
-    });
-
-    async function startAR() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }
-        });
-        video.srcObject = stream;
-        video.style.display = "block";
-        startBtn.style.display = "none";
-        togglePollutionBtn.style.display = "inline-block";
-        showMessage("Move your phone to calibrate view.");
-      } catch (err) {
-        showMessage("Camera access denied!");
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        pos => drawSky(pos.coords.latitude, pos.coords.longitude),
-        () => {
-          showMessage("Using default location 0,0");
-          drawSky(0, 0);
-        }
-      );
-    }
-
-    window.addEventListener("deviceorientation", e => {
-      if (e.alpha !== null && e.beta !== null) {
-        lastKnownAzimuth = (360 - e.alpha) % 360;
-        lastKnownAltitude = e.beta - 45; // rough calibration
-      }
-    });
-
-    togglePollutionBtn.addEventListener("click", () => {
-      isPolluted = !isPolluted;
-      togglePollutionBtn.textContent = isPolluted
-        ? "Show Visible Sky"
-        : "Show Objects Not Visible to Naked Eye";
-      showMessage(
-        isPolluted
-          ? "Showing deep sky objects 🌌"
-          : "Showing naked-eye sky ✨"
-      );
-    });
-
-    function drawSky(lat, lon) {
-      function animate() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const time = Astronomy.MakeTime(new Date());
-        const observer = new Astronomy.Observer(lat, lon, 0);
-
-        // Draw crosshair
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    // ---- 1. Draw Random Red Stars ----
+    function drawStars() {
+      for (let i = 0; i < 100; i++) {
+        let x = Math.random() * canvas.width;
+        let y = Math.random() * canvas.height;
+        ctx.fillStyle = "red";
         ctx.beginPath();
-        ctx.moveTo(cx - 15, cy);
-        ctx.lineTo(cx + 15, cy);
-        ctx.moveTo(cx, cy - 15);
-        ctx.lineTo(cx, cy + 15);
-        ctx.stroke();
-
-        function drawObject(name, ra, dec, color, size) {
-          const hor = Astronomy.Horizon(time, observer, ra, dec, "normal");
-
-          if (hor.altitude > 0) {
-            let azDiff = hor.azimuth - lastKnownAzimuth;
-            if (azDiff > 180) azDiff -= 360;
-            if (azDiff < -180) azDiff += 360;
-
-            let altDiff = hor.altitude - lastKnownAltitude;
-
-            const x = cx + (azDiff / (fov / 2)) * (canvas.width / 2);
-            const y = cy - (altDiff / (fov / 2)) * (canvas.height / 2);
-
-            if (x > 0 && x < canvas.width && y > 0 && y < canvas.height) {
-              ctx.beginPath();
-              ctx.arc(x, y, size, 0, Math.PI * 2);
-              ctx.fillStyle = color;
-              ctx.fill();
-              ctx.fillStyle = "white";
-              ctx.font = "14px Arial";
-              ctx.fillText(name, x + size + 5, y + 5);
-            }
-          }
-        }
-
-        if (!isPolluted) {
-          const sun = Astronomy.Equator("Sun", time, observer, true, true);
-          drawObject("Sun", sun.ra, sun.dec, "yellow", 20);
-
-          const moon = Astronomy.Equator("Moon", time, observer, true, true);
-          drawObject("Moon", moon.ra, moon.dec, "orange", 15);
-
-          stars.forEach(s =>
-            drawObject(s.name, s.ra, s.dec, "red", Math.max(4, 8 - s.magnitude))
-          );
-        } else {
-          deepSkyObjects.forEach(d =>
-            drawObject(d.name, d.ra, d.dec, "red", d.size / 3)
-          );
-        }
-
-        requestAnimationFrame(animate);
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
       }
-      animate();
     }
+
+    // ---- 2. Draw Moon using astronomy-engine ----
+    async function drawMoon() {
+      // Your location (example: Dhaka, Bangladesh)
+      let observer = new Astronomy.Observer(23.8103, 90.4125, 0); 
+      let now = new Date();
+
+      let equ = Astronomy.Equator("Moon", now, observer, true, true);
+      let hor = Astronomy.Horizon(now, observer, equ.ra, equ.dec, "normal");
+
+      // Convert altitude/azimuth to screen coords
+      let x = (hor.azimuth / 360) * canvas.width;
+      let y = canvas.height - (hor.altitude / 90) * canvas.height;
+
+      ctx.fillStyle = "white";
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ---- Main Drawing ----
+    function drawSky() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawStars();
+      drawMoon();
+    }
+
+    drawSky();
   </script>
 </body>
 </html>
