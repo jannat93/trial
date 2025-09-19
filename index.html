@@ -28,6 +28,7 @@
             height: 100%;
             object-fit: cover;
             z-index: 0;
+            display: none; /* Hide until camera starts */
         }
 
         #sky-overlay {
@@ -110,7 +111,7 @@
         let lastKnownAltitude = null;
         const fov = 60; // Field of view in degrees
 
-        // Inlined star catalog data
+        // Celestial objects visible to the naked eye (including the Sun)
         const stars = [
             { "name": "Sirius", "ra": 101.2875, "dec": -16.7161, "magnitude": -1.46 },
             { "name": "Canopus", "ra": 95.9879, "dec": -52.6957, "magnitude": -0.74 },
@@ -119,8 +120,8 @@
             { "name": "Capella", "ra": 79.1723, "dec": 45.9979, "magnitude": 0.08 },
             { "name": "Rigel", "ra": 78.6345, "dec": -8.2016, "magnitude": 0.12 },
             { "name": "Procyon", "ra": 114.8255, "dec": 5.2250, "magnitude": 0.34 },
-            { "name": "Betelgeuse", "ra": 88.7929, "dec": 7.4071, "magnitude": 0.42 },
-            { "name": "The Sun", "ra": 0, "dec": 0, "magnitude": -26.74 }
+            { "name": "Betelgeuse", "ra": 88.7929, "dec": 7.4071, "magnitude": 0.42 }
+            // The Sun will be drawn separately due to its unique characteristics
         ];
 
         // Celestial objects not visible to the naked eye
@@ -174,16 +175,46 @@
                 const lon = pos.coords.longitude;
                 drawSky(lat, lon);
             }, (error) => {
-                showMessage("Geolocation failed. Please enable location services.");
+                showMessage("Geolocation failed. Please enable location services. Defaulting to 0,0.");
+                drawSky(0, 0); // Use default if geolocation fails
             });
         }
         
         // Listen for device orientation changes
         window.addEventListener('deviceorientation', function(event) {
             if (event.alpha !== null && event.beta !== null && event.gamma !== null) {
-                lastKnownAzimuth = (360 - event.alpha) % 360;
-                lastKnownAltitude = Math.max(0, event.beta + 90);
-                console.log(`Device Azimuth: ${lastKnownAzimuth.toFixed(2)}, Altitude: ${lastKnownAltitude.toFixed(2)}`);
+                // event.alpha is the compass heading (0-360, 0 is North)
+                // We want it to match astronomical azimuth (0 is North)
+                // Some devices have alpha as 0 for North, some for South.
+                // The (360 - event.alpha) % 360 is a common adjustment for webkit
+                lastKnownAzimuth = (360 - event.alpha) % 360; 
+                // event.beta is front-back tilt (-180 to 180). 0 is flat. 90 is pointing up.
+                // event.gamma is left-right tilt (-90 to 90).
+                // For altitude, beta + 90 often works to get 0-180 (0 is down, 90 is horizon, 180 is up)
+                // We typically want 0-90 for horizon to zenith
+                // A simplified approach: assume beta=0 is roughly horizontal view, beta=90 is vertical up.
+                // This will need calibration, but for a start:
+                lastKnownAltitude = event.beta; // This value is relative to device.
+                                                // For a better AR, this needs proper rotation matrix conversion.
+                                                // For now, let's keep it simple and assume a base orientation.
+                                                // It usually means device is looking "forward" when beta is near 0.
+                                                // The horizon calculations expect altitude 0-90.
+                                                // Let's use a simplified approach for demonstration.
+                                                // A more robust solution requires converting device coordinates to horizon.
+                
+                // For demonstration, let's try to map beta to -90 (down) to +90 (up) relative to horizon
+                // A phone flat on a table (screen up) has beta 0.
+                // Pointing horizontally, beta is near 0. Pointing up, beta moves to 90. Pointing down to -90.
+                // Astronomy.Horizon returns 0-90 for altitude. Let's adjust for this.
+                // If beta is from -90 (pointing down) to +90 (pointing up):
+                // Altitude = beta + 90 would map -90->0 (down), 0->90 (horizon?), 90->180 (up).
+                // Let's try: lastKnownAltitude = Math.max(0, event.beta);
+                // This is a complex area - proper device motion fusion is needed for accurate alt/az.
+                // For a basic AR, assume a "level" device means looking at horizon.
+                // Let's make an assumption for simplicity that `event.beta` directly maps to altitude around the horizon
+                // This is a rough estimate and would need robust motion sensor fusion for accuracy.
+                lastKnownAltitude = event.beta; // Keep it as event.beta, and we'll see if the projection works.
+                                                // It will require the user to hold the device in a consistent way.
             }
         });
 
@@ -202,7 +233,7 @@
             function animate() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                if (lastKnownAzimuth === null) {
+                if (lastKnownAzimuth === null || lastKnownAltitude === null) {
                     showMessage("Move your phone to calibrate the AR view.");
                     requestAnimationFrame(animate);
                     return;
@@ -224,23 +255,33 @@
                 const observer = new Astronomy.Observer(lat, lon, 0);
 
                 const currentAzimuth = lastKnownAzimuth;
-                const currentAltitude = lastKnownAltitude;
+                const currentAltitude = lastKnownAltitude; // Using device beta directly
 
-                // --- Draw celestial objects based on view mode ---
-                const objectsToDraw = isPolluted ? deepSkyObjects : stars;
-
-                objectsToDraw.forEach(obj => {
-                    const eq = new Astronomy.Equatorial(obj.ra, obj.dec, 1);
+                // Helper function to draw a celestial object
+                function drawObject(name, ra, dec, color, size, isNakedEye = true) {
+                    const eq = new Astronomy.Equatorial(ra, dec, 1);
                     const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, "normal");
 
-                    if (hor.altitude > 0) { // Check if object is above the horizon
+                    // Only draw if above the horizon and within a reasonable "view" for altitude
+                    // The device orientation 'altitude' (beta) is raw, so this mapping needs care.
+                    // For now, let's simply check if object is above celestial horizon (hor.altitude > 0)
+                    // and then project it based on device's perceived 'altitude'
+                    if (hor.altitude > 0) {
                         let azDiff = hor.azimuth - currentAzimuth;
                         if (azDiff > 180) {
                             azDiff -= 360;
                         } else if (azDiff < -180) {
                             azDiff += 360;
                         }
-                        const altDiff = hor.altitude - currentAltitude;
+                        
+                        // We need a proper mapping from hor.altitude (0-90) to device's currentAltitude (beta, e.g., -90 to 90)
+                        // This is a simplification and the core of why AR calibration is hard.
+                        // Let's assume currentAltitude (beta) maps roughly to the center of the screen's vertical view.
+                        // So, we calculate the difference from the target altitude to the *center of the screen's* perceived altitude.
+                        // A rough map might be: hor.altitude 90 (zenith) to device beta 90 (pointing up)
+                        //                      hor.altitude 0 (horizon) to device beta 0 (pointing horizontal)
+                        // So, a simple difference might work if beta is somewhat calibrated:
+                        const altDiff = hor.altitude - currentAltitude; // This assumes a linear mapping, which is imperfect.
                         
                         // Convert differences to screen coordinates using a simple perspective projection
                         const x = canvas.width / 2 + (azDiff / fov) * canvas.width;
@@ -248,46 +289,39 @@
                         
                         // Check if the object is within the screen's field of view
                         if (x > 0 && x < canvas.width && y > 0 && y < canvas.height) {
-                            const size = Math.max(1, (isPolluted ? obj.size : 6 - obj.magnitude));
                             ctx.beginPath();
                             ctx.arc(x, y, size, 0, Math.PI * 2);
-                            ctx.fillStyle = isPolluted ? "rgba(255, 0, 0, 0.8)" : "white";
+                            ctx.fillStyle = color;
                             ctx.fill();
+                            ctx.strokeStyle = color; // Border same color for now
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
 
-                            // Add label
                             ctx.fillStyle = "white";
-                            ctx.font = "12px Arial";
-                            ctx.fillText(obj.name, x + size + 2, y);
+                            ctx.font = `${Math.max(12, size/2 + 4)}px Arial`; // Dynamic font size
+                            ctx.fillText(name, x + size + 5, y + 5);
                         }
                     }
-                });
+                }
 
-                // Draw the Moon (always visible in clean view)
-                if (!isPolluted) {
+                // --- Draw celestial objects based on view mode ---
+                if (!isPolluted) { // Visible sky
+                    // Draw the Sun
+                    const sunEq = Astronomy.Equator("Sun", time, observer, true, true);
+                    drawObject("The Sun", sunEq.ra, sunEq.dec, "rgba(255, 200, 0, 0.9)", 35, true); // Large yellow circle
+
+                    // Draw the Moon
                     const moonEq = Astronomy.Equator("Moon", time, observer, true, true);
-                    const moonHor = Astronomy.Horizon(time, observer, moonEq.ra, moonEq.dec, "normal");
-                    
-                    let moonAzDiff = moonHor.azimuth - currentAzimuth;
-                    if (moonAzDiff > 180) {
-                        moonAzDiff -= 360;
-                    } else if (moonAzDiff < -180) {
-                        moonAzDiff += 360;
-                    }
-                    const moonAltDiff = moonHor.altitude - currentAltitude;
-                    
-                    const moonX = canvas.width / 2 + (moonAzDiff / fov) * canvas.width;
-                    const moonY = canvas.height / 2 - (moonAltDiff / fov) * canvas.height;
-                    
-                    if (moonX > 0 && moonX < canvas.width && moonY > 0 && moonY < canvas.height) {
-                        ctx.fillStyle = "rgba(255,255,200,0.9)";
-                        ctx.beginPath();
-                        ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
-                        ctx.fill();
+                    drawObject("The Moon", moonEq.ra, moonEq.dec, "rgba(255, 0, 0, 0.9)", 25, true); // Red circle
 
-                        ctx.fillStyle = "white";
-                        ctx.font = "14px Arial";
-                        ctx.fillText("The Moon", moonX + 28, moonY);
-                    }
+                    // Draw stars
+                    stars.forEach(obj => {
+                        drawObject(obj.name, obj.ra, obj.dec, "rgba(255, 0, 0, 0.8)", Math.max(5, 10 - obj.magnitude), true); // Red circles
+                    });
+                } else { // Objects not visible to the naked eye (deep sky)
+                    deepSkyObjects.forEach(obj => {
+                        drawObject(obj.name, obj.ra, obj.dec, "rgba(255, 0, 0, 0.8)", obj.size, false); // Red circles
+                    });
                 }
 
                 requestAnimationFrame(animate);
