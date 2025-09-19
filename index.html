@@ -23,7 +23,6 @@ button {
     padding: 12px 18px; font-size: 16px; border-radius: 8px;
     border: 1px solid white; background: rgba(0,0,0,0.6); color: white;
     cursor: pointer; transition: 0.3s;
-    /* Add a subtle hover effect and shadow for a better look */
     box-shadow: 0 4px 6px rgba(0,0,0,0.2);
 }
 button:hover { background: rgba(255,255,255,0.2); }
@@ -49,13 +48,12 @@ button:hover { background: rgba(255,255,255,0.2); }
 const video = document.getElementById('camera');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
-// Initial resize
+
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 }
 resizeCanvas();
-// Listen for window resize to keep canvas responsive
 window.addEventListener('resize', resizeCanvas);
 
 const startBtn = document.getElementById('startBtn');
@@ -67,7 +65,7 @@ let showDeepSky = true;
 let azimuth = 0, altitude = 0;
 const fov = 60; // degrees
 
-// Stars (bright stars)
+// Stars (bright ones)
 const stars = [
     {name:"Sirius", ra:101.2875, dec:-16.7161, mag:-1.46},
     {name:"Vega", ra:279.2347, dec:38.7837, mag:0.03},
@@ -76,7 +74,7 @@ const stars = [
     {name:"Capella", ra:79.1723, dec:45.9979, mag:0.08}
 ];
 
-// Deep-sky objects (red markers)
+// Deep-sky objects (RA in degrees, DEC in degrees)
 const deepSky = [
     {name:"Andromeda Galaxy", ra:10.6847, dec:41.269, size:30},
     {name:"Orion Nebula", ra:83.8016, dec:-5.3916, size:25},
@@ -91,7 +89,10 @@ function showMsg(text){
     setTimeout(()=>msgBox.style.display='none',3000);
 }
 
-// Device orientation logic - now with proper iOS permission handling
+// Convert RA in degrees to hours
+function deg2hour(deg){ return deg / 15; }
+
+// Device orientation
 function handleDeviceOrientation(e) {
     if(e.alpha!==null){
         azimuth = (360 - e.alpha)%360;
@@ -99,14 +100,14 @@ function handleDeviceOrientation(e) {
     }
 }
 
-// Toggle deep-sky mode
+// Toggle deep-sky
 toggleBtn.addEventListener('click', ()=>{
     showDeepSky = !showDeepSky;
     toggleBtn.textContent = showDeepSky ? 'Toggle Deep Sky' : 'Toggle Visible Sky';
     showMsg(showDeepSky ? 'Deep Sky Mode' : 'Visible Sky Mode');
 });
 
-// Draw function
+// Draw
 function drawSky(lat, lon){
     const observer = new Astronomy.Observer(lat, lon, 0);
     function animate(){
@@ -124,18 +125,20 @@ function drawSky(lat, lon){
 
         const time = Astronomy.MakeTime(new Date());
 
-        function drawObj(name, ra, dec, size, color){
-            const eq = new Astronomy.Equatorial(ra, dec, 1);
+        function drawObj(name, raDeg, dec, size, color){
+            const raHours = deg2hour(raDeg);
+            const eq = new Astronomy.Equatorial(raHours, dec, 1);
             const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, 'normal');
-            // Always draw, even if Sun is up
+            
             let azDiff = hor.azimuth - azimuth;
             if(azDiff>180) azDiff-=360;
             else if(azDiff<-180) azDiff+=360;
             const altDiff = hor.altitude - altitude;
+
             const x = canvas.width/2 + (azDiff/fov)*canvas.width;
             const y = canvas.height/2 - (altDiff/fov)*canvas.height;
+
             if(x>0 && x<canvas.width && y>0 && y<canvas.height){
-                // Glow effect
                 ctx.shadowBlur=15; ctx.shadowColor=color;
                 ctx.beginPath();
                 ctx.arc(x,y,size,0,Math.PI*2);
@@ -148,17 +151,23 @@ function drawSky(lat, lon){
             }
         }
 
-        // Visible sky objects
+        // Sun & Moon
         const sunEq = Astronomy.Equator('Sun',time,observer,true,true);
-        drawObj('Sun',sunEq.ra,sunEq.dec,25,'rgba(255,255,0,0.9)');
+        drawObj('Sun', sunEq.ra*15, sunEq.dec, 25, 'rgba(255,255,0,0.9)');
         const moonEq = Astronomy.Equator('Moon',time,observer,true,true);
-        drawObj('Moon',moonEq.ra,moonEq.dec,20,'rgba(200,200,255,0.9)');
+        drawObj('Moon', moonEq.ra*15, moonEq.dec, 20, 'rgba(200,200,255,0.9)');
+
+        // Stars
         stars.forEach(s=>drawObj(s.name,s.ra,s.dec,Math.max(5,10-s.mag),'rgba(0,255,255,0.8)'));
 
-        // Deep-sky objects
+        // Deep-sky
         if(showDeepSky){
             deepSky.forEach(d=>drawObj(d.name,d.ra,d.dec,d.size,'rgba(255,0,0,0.8)'));
         }
+
+        // Debug text
+        ctx.fillStyle='white'; ctx.font='14px monospace';
+        ctx.fillText(`Az=${azimuth.toFixed(1)} Alt=${altitude.toFixed(1)}`, 20, 30);
 
         requestAnimationFrame(animate);
     }
@@ -167,27 +176,22 @@ function drawSky(lat, lon){
 
 // Start AR
 startBtn.addEventListener('click', async ()=>{
-    // Hide start button immediately
     startBtn.style.display = 'none';
 
-    // Request camera access
     try{
         const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
         video.srcObject = stream;
-        video.style.display='block'; // Make the video visible
+        video.style.display='block';
         toggleBtn.style.display='inline-block';
         showMsg('Point device to the sky to see celestial objects');
 
-        // Geolocation and sensor permissions
         navigator.geolocation.getCurrentPosition(pos=>{
-            // Start the AR drawing after getting a location
             drawSky(pos.coords.latitude,pos.coords.longitude);
         }, err=>{
             showMsg('Geolocation failed, defaulting to 0,0');
             drawSky(0,0);
         });
 
-        // Request device orientation permission for iOS 13+
         if (typeof DeviceOrientationEvent.requestPermission === 'function') {
             const permission = await DeviceOrientationEvent.requestPermission();
             if (permission === 'granted') {
@@ -196,7 +200,6 @@ startBtn.addEventListener('click', async ()=>{
                 showMsg('Motion sensor permission denied.');
             }
         } else {
-            // Non-iOS devices, listen immediately
             window.addEventListener('deviceorientation', handleDeviceOrientation);
         }
 
