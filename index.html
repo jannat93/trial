@@ -141,6 +141,20 @@
         }
 
         startBtn.addEventListener("click", async () => {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                const permissionState = await DeviceOrientationEvent.requestPermission();
+                if (permissionState === 'granted') {
+                    startAR();
+                } else {
+                    showMessage("Device motion access denied. Please enable motion sensors in your browser settings.");
+                }
+            } else {
+                // For browsers that don't support requestPermission()
+                startAR();
+            }
+        });
+
+        async function startAR() {
             // Start camera
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -148,7 +162,7 @@
                 video.style.display = 'block';
                 startBtn.style.display = 'none';
                 togglePollutionBtn.style.display = 'inline-block';
-                showMessage("Calibrating AR view. Please wait...");
+                showMessage("Calibrating AR view. Please move your phone to get started.");
             } catch (err) {
                 showMessage("Camera access denied! Please enable camera permissions.");
                 return;
@@ -162,17 +176,12 @@
             }, (error) => {
                 showMessage("Geolocation failed. Please enable location services.");
             });
-        });
-
+        }
+        
         // Listen for device orientation changes
         window.addEventListener('deviceorientation', function(event) {
-            // event.alpha is the compass heading (0-360 degrees)
-            // event.beta is the front-back tilt (-180 to 180 degrees)
-            // event.gamma is the left-right tilt (-90 to 90 degrees)
             if (event.alpha !== null && event.beta !== null && event.gamma !== null) {
-                // Calculate azimuth and altitude based on device orientation
-                // Simple mapping for demonstration purposes
-                lastKnownAzimuth = 360 - event.alpha; // 360 minus alpha for a compass heading
+                lastKnownAzimuth = 360 - event.alpha;
                 lastKnownAltitude = event.beta + 90;
             }
         });
