@@ -1,500 +1,171 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>AR Sky — Real Sun, Moon, Stars</title>
-
-<!-- astronomy-engine (browser build) -->
-<script src="https://unpkg.com/astronomy-engine/astronomy.browser.js"></script>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AR Sky 🌌</title>
+<script src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.min.js"></script>
 <style>
-  :root{
-    --bg: #02020a;
-    --panel: rgba(10,12,18,0.6);
-    --accent: #7dd3fc;
-    --glow: rgba(255,200,100,0.95);
-    --muted: #cbd5e1;
-  }
-  html,body { height:100%; margin:0; background:var(--bg); font-family:Inter,system-ui,Segoe UI,Roboto,Arial; color:#fff; -webkit-font-smoothing:antialiased; }
-  #app { position:relative; width:100%; height:100vh; overflow:hidden; }
-  video#camera {
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); z-index:0; background:black;
-  }
-  canvas#overlay {
-    position:absolute; inset:0; width:100%; height:100%; z-index:2; touch-action:none;
-  }
-
-  /* UI */
-  #topbar { position:absolute; left:12px; top:12px; z-index:6; display:flex; gap:8px; align-items:center; }
-  .btn { background:var(--panel); color:var(--muted); border-radius:10px; padding:8px 12px; border:1px solid rgba(255,255,255,0.06); cursor:pointer; font-size:14px; }
-  .btn.strong { background:linear-gradient(90deg,#0ea5e9, #7c3aed); color:white; font-weight:600; }
-  #center { padding:8px 10px; }
-  #poll { padding:8px 10px; }
-
-  #debug {
-    position:absolute; right:12px; top:12px; z-index:6; background:linear-gradient(180deg, rgba(0,0,0,0.5), rgba(0,0,0,0.35));
-    padding:10px; border-radius:10px; font-size:13px; color:#ddd; min-width:170px;
-  }
-
-  #bottomBar {
-    position:absolute; left:50%; transform:translateX(-50%); bottom:16px; z-index:6; display:flex; gap:8px;
-  }
-
-  #msg {
-    position:absolute; left:50%; transform:translateX(-50%); top:50%; z-index:9; background:rgba(0,0,0,0.6);
-    color:#fff; padding:10px 14px; border-radius:10px; display:none;
-  }
-
-  /* nice labels */
-  .label {
-    pointer-events:none;
-    font-size:13px;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
-  }
-
-  /* simulation sliders (hidden by default) */
-  #simulator {
-    position:absolute; left:12px; bottom:12px; z-index:6; background:var(--panel); padding:12px; border-radius:10px; display:none;
-  }
-  #simulator label { font-size:12px; color:#cbd5e1; display:block; margin-bottom:6px; }
-  #simulator input[type=range]{ width:180px; display:block; }
-
-  /* small responsive tweaks */
-  @media (max-width:520px){
-    #debug { min-width:140px; font-size:12px; }
-    .btn { padding:8px 10px; font-size:13px; }
-  }
+    body, html {
+        margin: 0; padding: 0;
+        width: 100%; height: 100%;
+        overflow: hidden;
+        background: radial-gradient(circle at bottom, #000010, #000000);
+        font-family: 'Segoe UI', sans-serif;
+        color: white;
+    }
+    #camera-container { position: relative; width: 100%; height: 100%; }
+    #camera { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 0; display: none; }
+    #overlay { position: absolute; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+    #controls {
+        position: absolute; bottom: 15px; width: 100%; display: flex;
+        justify-content: center; gap: 10px; z-index: 2;
+    }
+    button {
+        padding: 12px 18px; font-size: 16px; border-radius: 8px;
+        border: 1px solid white; background: rgba(0,0,0,0.6); color: white;
+        cursor: pointer; transition: 0.3s;
+    }
+    button:hover { background: rgba(255,255,255,0.2); }
+    .message-box {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.7); padding: 15px 20px; border-radius: 10px;
+        text-align: center; display: none; z-index: 10;
+    }
 </style>
 </head>
 <body>
-  <div id="app">
+<div id="camera-container">
     <video id="camera" autoplay playsinline></video>
     <canvas id="overlay"></canvas>
-
-    <div id="topbar">
-      <button id="startBtn" class="btn strong">Start AR</button>
-      <button id="poll" class="btn" style="display:none">Show deep-sky</button>
-    </div>
-
-    <div id="bottomBar">
-      <button id="centerBtn" class="btn">Center View</button>
-      <button id="labelsBtn" class="btn">Hide Labels</button>
-    </div>
-
-    <div id="simulator">
-      <label>Sim Az <span id="sAzV">180</span>°</label>
-      <input id="sAz" type="range" min="0" max="360" value="180">
-      <label>Sim Alt <span id="sAltV">20</span>°</label>
-      <input id="sAlt" type="range" min="-20" max="90" value="20">
-    </div>
-
-    <div id="debug">
-      <div style="font-weight:600; margin-bottom:6px;">AR Debug</div>
-      <div id="dbg-az">Az: —</div>
-      <div id="dbg-alt">Alt: —</div>
-      <div id="dbg-loc">Loc: —</div>
-      <div id="dbg-sensor">Sensor: —</div>
-      <div id="dbg-note" style="margin-top:6px; font-size:12px; color:#99a3b3">Tip: Point your phone at the sky and tap Center View to align.</div>
-    </div>
-
-    <div id="msg"></div>
-  </div>
+</div>
+<div id="controls">
+    <button id="startBtn">Start AR 🌌</button>
+    <button id="toggleBtn" style="display:none;">Show Deep Sky</button>
+</div>
+<div class="message-box" id="msgBox"><p id="msgText"></p></div>
 
 <script>
-/* ============================
-   AR Sky — complete single file
-   ============================ */
-
-/* ---------- Small bright star catalog (RA deg, Dec deg, mag) ----------
-   This is a compact subset of bright stars for demo. You can extend.
-*/
-const STARS = [
-  {name:"Sirius", ra:101.2875, dec:-16.7161, mag:-1.46},
-  {name:"Canopus", ra:95.9879, dec:-52.6957, mag:-0.74},
-  {name:"Arcturus", ra:213.9154, dec:19.1825, mag:-0.05},
-  {name:"Vega", ra:279.2347, dec:38.7837, mag:0.03},
-  {name:"Capella", ra:79.1723, dec:45.9979, mag:0.08},
-  {name:"Rigel", ra:78.6345, dec:-8.2016, mag:0.12},
-  {name:"Procyon", ra:114.8255, dec:5.2250, mag:0.34},
-  {name:"Betelgeuse", ra:88.7929, dec:7.4071, mag:0.42},
-  {name:"Altair", ra:297.6958, dec:8.8683, mag:0.77},
-  {name:"Aldebaran", ra:68.9802, dec:16.5093, mag:0.85},
-  {name:"Spica", ra:201.2983, dec:-11.1614, mag:0.97},
-  {name:"Antares", ra:247.3519, dec:-26.4320, mag:1.06},
-  {name:"Pollux", ra:113.6494, dec:28.0262, mag:1.14},
-  {name:"Fomalhaut", ra:344.4128, dec:-29.6222, mag:1.16},
-  {name:"Deneb", ra:310.3579, dec:45.2803, mag:1.25},
-  {name:"Regulus", ra:152.0929, dec:11.9672, mag:1.35},
-  {name:"Adhara", ra:104.6564, dec:-28.9721, mag:1.50},
-  {name:"Shaula", ra:263.4022, dec:-37.1038, mag:1.62},
-  {name:"Bellatrix", ra:81.2828, dec:6.3497, mag:1.64},
-  {name:"Elnath", ra:81.5729, dec:28.6075, mag:1.65}
-];
-
-/* Deep-sky demo objects */
-const DEEPSKY = [
-  {name:"Andromeda Galaxy", ra:10.6847, dec:41.2690, size:28},
-  {name:"Orion Nebula", ra:83.8221, dec:-5.3911, size:22},
-  {name:"Pleiades", ra:56.75, dec:24.1167, size:18}
-];
-
-/* ---------- DOM & canvas ---------- */
 const video = document.getElementById('camera');
 const canvas = document.getElementById('overlay');
-const ctx = canvas.getContext('2d', { alpha:true });
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
 const startBtn = document.getElementById('startBtn');
-const pollBtn = document.getElementById('poll');
-const centerBtn = document.getElementById('centerBtn');
-const labelsBtn = document.getElementById('labelsBtn');
+const toggleBtn = document.getElementById('toggleBtn');
+const msgBox = document.getElementById('msgBox');
+const msgText = document.getElementById('msgText');
 
-const simWrap = document.getElementById('simulator');
-const sAz = document.getElementById('sAz');
-const sAlt = document.getElementById('sAlt');
-const sAzV = document.getElementById('sAzV');
-const sAltV = document.getElementById('sAltV');
+let isDeepSky = false;
+let azimuth = 0, altitude = 0;
+const fov = 60;
 
-const dbgAz = document.getElementById('dbg-az');
-const dbgAlt = document.getElementById('dbg-alt');
-const dbgLoc = document.getElementById('dbg-loc');
-const dbgSensor = document.getElementById('dbg-sensor');
-const msg = document.getElementById('msg');
+// Simple star & deep-sky data
+const stars = [
+    {name:"Sirius", ra:101.2875, dec:-16.7161, mag:-1.46},
+    {name:"Vega", ra:279.2347, dec:38.7837, mag:0.03},
+    {name:"Betelgeuse", ra:88.7929, dec:7.4071, mag:0.42},
+    {name:"Rigel", ra:78.6345, dec:-8.2016, mag:0.12},
+    {name:"Capella", ra:79.1723, dec:45.9979, mag:0.08}
+];
+const deepSky = [
+    {name:"Andromeda", ra:10.6847, dec:41.269, size:30},
+    {name:"Orion Nebula", ra:83.8016, dec:-5.3916, size:25},
+    {name:"Pleiades", ra:56.75, dec:24.1, size:20},
+    {name:"Crab Nebula", ra:83.6331, dec:22.0145, size:15}
+];
 
-let width = innerWidth, height = innerHeight;
-function resize(){ width = canvas.width = innerWidth; height = canvas.height = innerHeight; }
-addEventListener('resize', resize);
-resize();
-
-/* ---------- State ---------- */
-let userLat = 0, userLon = 0;
-let lastAz = 180, lastAlt = 20; // center az/alt (degrees)
-let useSimulation = true;
-let showLabels = true;
-let polluted = false;
-let sensorActive = false;
-
-/* ---------- Camera ---------- */
-async function startCamera(){
-  try {
-    const constraints = { video: { facingMode: { ideal: "environment" } }, audio:false };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = stream;
-    video.play().catch(()=>{});
-  } catch (e){
-    console.warn('Camera unavailable', e);
-    showMessage('Camera not available — still works with simulation.');
-  }
+function showMsg(text){
+    msgText.textContent=text;
+    msgBox.style.display='block';
+    setTimeout(()=>msgBox.style.display='none',3000);
 }
 
-/* ---------- Utilities: radians / deg ---------- */
-const toRad = d => d * Math.PI / 180;
-const toDeg = r => r * 180 / Math.PI;
+// Mobile orientation
+window.addEventListener('deviceorientation', e=>{
+    if(e.alpha!==null){ azimuth = (360 - e.alpha)%360; altitude = e.beta; }
+});
 
-/* ---------- Convert device Euler angles to azimuth & altitude ----------
-   Approach:
-   - Build rotation matrix from device Euler (alpha, beta, gamma).
-   - Rotate device forward vector (0,0,-1) into world coords (East, North, Up).
-   - Az = atan2(East, North) in degrees (0=N, increasing E).
-   - Alt = asin(Up).
-   Reference: common technique for mobile AR orientation.
-*/
-function eulerToAzAlt(alpha, beta, gamma, screenOrient=0){
-  const a = toRad(alpha || 0);
-  const b = toRad(beta || 0);
-  const g = toRad(gamma || 0);
-  const s = toRad(screenOrient || 0);
+toggleBtn.addEventListener('click', ()=>{
+    isDeepSky = !isDeepSky;
+    toggleBtn.textContent = isDeepSky ? 'Show Visible Sky' : 'Show Deep Sky';
+    showMsg(isDeepSky ? 'Deep Sky Mode' : 'Visible Sky Mode');
+});
 
-  const ca = Math.cos(a), sa = Math.sin(a);
-  const cb = Math.cos(b), sb = Math.sin(b);
-  const cg = Math.cos(g), sg = Math.sin(g);
+// Draw function
+function draw(lat, lon){
+    const observer = new Astronomy.Observer(lat, lon, 0);
+    function animate(){
+        ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // R = Rz(a) * Rx(b) * Ry(g)
-  const R = [
-    [ ca*cg - sa*sb*sg, -ca*sg - sa*sb*cg, -sa*cb ],
-    [ sa*cg + ca*sb*sg, -sa*sg + ca*sb*cg, ca*cb ],
-    [ cb*sg,              cb*cg,            -sb     ]
-  ];
+        // Center crosshair
+        ctx.strokeStyle='rgba(255,255,255,0.7)';
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width/2-15,canvas.height/2);
+        ctx.lineTo(canvas.width/2+15,canvas.height/2);
+        ctx.moveTo(canvas.width/2,canvas.height/2-15);
+        ctx.lineTo(canvas.width/2,canvas.height/2+15);
+        ctx.stroke();
 
-  // forward device vector (0,0,-1) -> world = -third column of R
-  const wx = -R[0][2];
-  const wy = -R[1][2];
-  const wz = -R[2][2];
+        const time = Astronomy.MakeTime(new Date());
 
-  // rotate around Z by -screen orientation
-  const cs = Math.cos(-s), ss = Math.sin(-s);
-  const ex = cs * wx - ss * wy;
-  const ey = ss * wx + cs * wy;
-  const ez = wz;
-
-  let az = toDeg(Math.atan2(ex, ey));
-  if (az < 0) az += 360;
-  let alt = toDeg(Math.asin(Math.max(-1, Math.min(1, ez))));
-  return { az, alt };
-}
-
-/* ---------- Projection: convert object Az/Alt to screen X/Y ----------
-   - Center of screen corresponds to lastAz,lastAlt.
-   - Simple linear mapping using FOV degrees (vertical) to map degrees->pixels.
-*/
-const FOV_DEG = 60; // vertical field of view used for projection (tweak for zoom)
-
-function projectAzAltToXY(objAz, objAlt){
-  // normalize az diff to [-180,180]
-  let azDiff = objAz - lastAz;
-  if (azDiff > 180) azDiff -= 360;
-  if (azDiff < -180) azDiff += 360;
-  let altDiff = objAlt - lastAlt;
-
-  const pxPerDegX = width / FOV_DEG;   // horizontal scale (approx)
-  const pxPerDegY = height / FOV_DEG;  // vertical scale
-
-  const x = width / 2 + azDiff * pxPerDegX;
-  const y = height / 2 - altDiff * pxPerDegY;
-  return { x, y, azDiff, altDiff };
-}
-
-/* ---------- Show / hide message ---------- */
-function showMessage(txt, t=2000){
-  msg.textContent = txt;
-  msg.style.display = 'block';
-  clearTimeout(msg._t);
-  msg._t = setTimeout(()=> msg.style.display = 'none', t);
-}
-
-/* ---------- Device orientation handling ---------- */
-let lastAlpha=0, lastBeta=0, lastGamma=0;
-function handleOrientation(e){
-  sensorActive = true;
-  dbgSensor.textContent = 'Sensor: active';
-  const alpha = (e.alpha !== null) ? e.alpha : lastAlpha;
-  const beta  = (e.beta  !== null) ? e.beta  : lastBeta;
-  const gamma = (e.gamma !== null) ? e.gamma : lastGamma;
-  lastAlpha = alpha; lastBeta = beta; lastGamma = gamma;
-
-  // screen orientation (0,90,180,270)
-  let sAngle = 0;
-  try {
-    if (screen && screen.orientation && typeof screen.orientation.angle === 'number') sAngle = screen.orientation.angle;
-    else if (typeof window.orientation === 'number') sAngle = window.orientation;
-  } catch (err) { sAngle = 0; }
-
-  const azalt = eulerToAzAlt(alpha, beta, gamma, sAngle);
-  lastAz = azalt.az;
-  lastAlt = azalt.alt;
-}
-
-/* ---------- Start sensors: request motion permission on iOS ---------- */
-async function startSensorsAndGeo(){
-  // Geolocation
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-    dbgLoc.textContent = `Loc: ${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
-  }, err => {
-    dbgLoc.textContent = 'Loc: default 0,0';
-    showMessage('Location not available — using default 0,0');
-    userLat = 0; userLon = 0;
-  }, { enableHighAccuracy:true, maximumAge:60000 });
-
-  // Device orientation permission (iOS)
-  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-    try {
-      const p = await DeviceOrientationEvent.requestPermission();
-      if (p === 'granted'){
-        window.addEventListener('deviceorientation', handleOrientation, true);
-        useSimulation = false;
-        simWrap.style.display = 'none';
-        dbgSensor.textContent = 'Sensor: granted (iOS)';
-      } else {
-        dbgSensor.textContent = 'Sensor: denied';
-        useSimulation = true;
-        simWrap.style.display = 'block';
-        showMessage('Sensor permission denied — use simulator sliders');
-      }
-    } catch (err){
-      dbgSensor.textContent = 'Sensor error';
-      useSimulation = true;
-      simWrap.style.display = 'block';
-      showMessage('Sensor permission error — use simulator sliders');
-    }
-  } else if (window.DeviceOrientationEvent) {
-    // regular browsers
-    window.addEventListener('deviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation', handleOrientation, true);
-    useSimulation = false;
-    simWrap.style.display = 'none';
-    dbgSensor.textContent = 'Sensor: available';
-  } else {
-    useSimulation = true;
-    simWrap.style.display = 'block';
-    dbgSensor.textContent = 'Sensor: unavailable';
-    showMessage('No device orientation — use simulator sliders');
-  }
-}
-
-/* ---------- Draw loop ---------- */
-function drawLoop(){
-  ctx.clearRect(0,0,width,height);
-  // semi-transparent overlay for nicer contrast
-  // ctx.fillStyle = 'rgba(0,0,0,0.05)'; ctx.fillRect(0,0,width,height);
-
-  // crosshair center
-  ctx.strokeStyle = 'rgba(255,255,255,0.65)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(width/2 - 14, height/2);
-  ctx.lineTo(width/2 + 14, height/2);
-  ctx.moveTo(width/2, height/2 - 14);
-  ctx.lineTo(width/2, height/2 + 14);
-  ctx.stroke();
-
-  // debug values
-  dbgAz.textContent = `Az: ${lastAz.toFixed(1)}°`;
-  dbgAlt.textContent = `Alt: ${lastAlt.toFixed(1)}°`;
-
-  // update from simulator if enabled
-  if (useSimulation){
-    lastAz = parseFloat(sAz.value);
-    lastAlt = parseFloat(sAlt.value);
-    sAzV.textContent = sAz.value;
-    sAltV.textContent = sAlt.value;
-  }
-
-  // prepare astronomy time & observer
-  const now = new Date();
-  const time = Astronomy.MakeTime(now);
-  const observer = new Astronomy.Observer(userLat, userLon, 0);
-
-  /* --- Draw Sun --- */
-  try {
-    const sunEq = Astronomy.Equator('Sun', now, observer, true, true);
-    const sunHor = Astronomy.Horizon(now, observer, sunEq.ra, sunEq.dec, "normal");
-    if (sunHor.altitude > -6) { // show when near/above horizon
-      const p = projectAzAltToXY(sunHor.azimuth, sunHor.altitude);
-      if (p.x > -100 && p.x < width + 100 && p.y > -100 && p.y < height + 100) {
-        // glow
-        const g = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,60);
-        g.addColorStop(0, 'rgba(255,230,120,0.98)');
-        g.addColorStop(0.2, 'rgba(255,190,60,0.6)');
-        g.addColorStop(1, 'rgba(255,190,60,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(p.x,p.y,42,0,Math.PI*2); ctx.fill();
-        // core
-        ctx.fillStyle = 'rgba(255,220,120,1)';
-        ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.fill();
-        if (showLabels) drawLabel(p.x,p.y,"Sun");
-      }
-    }
-  } catch(e){ /*ignore*/ }
-
-  /* --- Draw Moon --- */
-  try {
-    const moonEq = Astronomy.Equator('Moon', now, observer, true, true);
-    const moonHor = Astronomy.Horizon(now, observer, moonEq.ra, moonEq.dec, "normal");
-    if (moonHor.altitude > -20) { // allow lower so it's easier to spot
-      const p = projectAzAltToXY(moonHor.azimuth, moonHor.altitude);
-      ctx.fillStyle = 'rgba(240,240,250,0.95)';
-      ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.fill();
-      // faint crescent shading (approx)
-      ctx.fillStyle = 'rgba(0,0,0,0.08)';
-      ctx.beginPath(); ctx.arc(p.x+3,p.y-2,8,0,Math.PI*2); ctx.fill();
-      if (showLabels) drawLabel(p.x,p.y,"Moon");
-    }
-  } catch(e){ /*ignore*/ }
-
-  /* --- Draw stars or deep-sky depending on mode --- */
-  if (!polluted){
-    for (let s of STARS){
-      try {
-        // compute Equatorial->Horizon with astronomy-engine
-        const eq = new Astronomy.Equatorial(s.ra, s.dec, 1);
-        const hor = Astronomy.Horizon(now, observer, eq.ra, eq.dec, "normal");
-        if (hor.altitude > 0) {
-          const p = projectAzAltToXY(hor.azimuth, hor.altitude);
-          // radius by magnitude (brighter -> larger)
-          const r = Math.max(2.0, 6.5 - (s.mag || 3));
-          // gentle glow
-          const alpha = Math.max(0.4, 1.0 - (s.mag || 3) / 6);
-          ctx.fillStyle = `rgba(255,220,220,${alpha})`;
-          ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill();
-          if (showLabels) drawLabel(p.x,p.y,s.name);
+        function drawObj(name, ra, dec, size, color){
+            const eq = new Astronomy.Equatorial(ra, dec, 1);
+            const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, 'normal');
+            if(hor.altitude>0){
+                let azDiff = hor.azimuth - azimuth;
+                if(azDiff>180) azDiff-=360;
+                else if(azDiff<-180) azDiff+=360;
+                const altDiff = hor.altitude - altitude;
+                const x = canvas.width/2 + (azDiff/fov)*canvas.width;
+                const y = canvas.height/2 - (altDiff/fov)*canvas.height;
+                if(x>0 && x<canvas.width && y>0 && y<canvas.height){
+                    ctx.beginPath();
+                    ctx.arc(x,y,size,0,Math.PI*2);
+                    ctx.fillStyle=color;
+                    ctx.fill();
+                    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+                    ctx.fillStyle='white'; ctx.font=`${Math.max(12,size/2+4)}px Arial`;
+                    ctx.fillText(name,x+size+5,y+5);
+                }
+            }
         }
-      } catch (err){}
-    }
-  } else {
-    for (let d of DEEPSKY){
-      try {
-        const eq = new Astronomy.Equatorial(d.ra, d.dec, 1);
-        const hor = Astronomy.Horizon(now, observer, eq.ra, eq.dec, "normal");
-        if (hor.altitude > 0) {
-          const p = projectAzAltToXY(hor.azimuth, hor.altitude);
-          const r = Math.max(4, (d.size||12)/3);
-          ctx.fillStyle = 'rgba(255,70,70,0.95)';
-          ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill();
-          ctx.strokeStyle = 'rgba(255,120,120,0.9)';
-          ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x,p.y,r+3,0,Math.PI*2); ctx.stroke();
-          if (showLabels) drawLabel(p.x,p.y,d.name);
+
+        if(isDeepSky){
+            deepSky.forEach(obj=>drawObj(obj.name,obj.ra,obj.dec,obj.size,'rgba(255,0,0,0.8)'));
+        }else{
+            // Sun & Moon
+            const sunEq = Astronomy.Equator('Sun',time,observer,true,true);
+            drawObj('Sun',sunEq.ra,sunEq.dec,25,'rgba(255,255,0,0.9)');
+            const moonEq = Astronomy.Equator('Moon',time,observer,true,true);
+            drawObj('Moon',moonEq.ra,moonEq.dec,20,'rgba(200,200,255,0.9)');
+            stars.forEach(s=>drawObj(s.name,s.ra,s.dec,Math.max(5,10-s.mag),'rgba(255,0,255,0.8)'));
         }
-      } catch(err){}
+
+        requestAnimationFrame(animate);
     }
-  }
-
-  // small bottom HUD
-  ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(10, height - 56, 360, 48);
-  ctx.fillStyle = '#dfe7f2';
-  ctx.font = '13px Inter, Arial';
-  ctx.fillText(polluted ? 'Mode: Deep-sky (red markers)' : 'Mode: Visible sky (Sun/Moon/bright stars)', 18, height - 34);
-  ctx.fillText('Center view to align or use simulator if sensors denied', 18, height - 16);
-  ctx.restore();
-
-  requestAnimationFrame(drawLoop);
+    animate();
 }
 
-/* ---------- Draw label helper ---------- */
-function drawLabel(x,y,text){
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.font = '14px Inter, Arial';
-  ctx.fillText(text, x + 8, y + 6);
-}
-
-/* ---------- UI actions ---------- */
-startBtn.addEventListener('click', async () => {
-  startBtn.disabled = true;
-  await startCamera();
-  await startSensorsAndGeo();
-  pollBtn.style.display = 'inline-block';
-  startBtn.style.display = 'none';
-  showMessage('AR started — point your device at the sky');
+// Start AR
+startBtn.addEventListener('click', async ()=>{
+    try{
+        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+        video.srcObject = stream;
+        video.style.display='block';
+        startBtn.style.display='none';
+        toggleBtn.style.display='inline-block';
+        showMsg('Move device to calibrate AR');
+        navigator.geolocation.getCurrentPosition(pos=>{
+            draw(pos.coords.latitude,pos.coords.longitude);
+        }, err=>{
+            showMsg('Geo failed, using 0,0');
+            draw(0,0);
+        });
+    }catch(e){ showMsg('Camera access denied'); }
 });
-
-pollBtn.addEventListener('click', ()=> {
-  polluted = !polluted;
-  pollBtn.textContent = polluted ? 'Show visible sky' : 'Show deep-sky';
-  showMessage(polluted ? 'Deep-sky markers on' : 'Visible sky mode');
-});
-
-centerBtn.addEventListener('click', ()=> {
-  showMessage('View centered');
-  // The system already sets lastAz/lastAlt from sensor; keep as is - user uses this to align
-});
-
-labelsBtn.addEventListener('click', ()=> {
-  showLabels = !showLabels;
-  labelsBtn.textContent = showLabels ? 'Hide Labels' : 'Show Labels';
-});
-
-/* simulator sliders are used when useSimulation = true */
-sAz.addEventListener('input', ()=> { sAzV.textContent = sAz.value; });
-sAlt.addEventListener('input', ()=> { sAltV.textContent = sAlt.value; });
-
-/* ---------- Initialize: show simulator and start loop ----------
-   We'll show the view in simulator mode until user presses Start AR.
-*/
-simWrap.style.display = 'block';
-showMessage('Tap Start AR to enable camera and sensors — or use simulator sliders.');
-requestAnimationFrame(drawLoop);
 </script>
 </body>
 </html>
