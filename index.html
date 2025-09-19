@@ -6,30 +6,30 @@
 <title>AR Sky 🌌</title>
 <script src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.min.js"></script>
 <style>
-    html, body {
-        margin: 0; padding: 0; width: 100%; height: 100%;
-        overflow: hidden; font-family: 'Segoe UI', sans-serif;
-        background: radial-gradient(circle at bottom, #000010, #000000);
-        color: white;
-    }
-    #camera-container { position: relative; width: 100%; height: 100%; }
-    #camera { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 0; display: none; }
-    #overlay { position: absolute; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
-    #controls {
-        position: absolute; bottom: 15px; width: 100%; display: flex;
-        justify-content: center; gap: 10px; z-index: 2;
-    }
-    button {
-        padding: 12px 18px; font-size: 16px; border-radius: 8px;
-        border: 1px solid white; background: rgba(0,0,0,0.6); color: white;
-        cursor: pointer; transition: 0.3s;
-    }
-    button:hover { background: rgba(255,255,255,0.2); }
-    .message-box {
-        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        background: rgba(0,0,0,0.7); padding: 15px 20px; border-radius: 10px;
-        text-align: center; display: none; z-index: 10;
-    }
+html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; font-family: 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at bottom, #000010, #000000);
+    color: white;
+}
+#camera-container { position: relative; width: 100%; height: 100%; }
+#camera { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 0; display: none; }
+#overlay { position: absolute; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+#controls {
+    position: absolute; bottom: 15px; width: 100%; display: flex;
+    justify-content: center; gap: 10px; z-index: 2;
+}
+button {
+    padding: 12px 18px; font-size: 16px; border-radius: 8px;
+    border: 1px solid white; background: rgba(0,0,0,0.6); color: white;
+    cursor: pointer; transition: 0.3s;
+}
+button:hover { background: rgba(255,255,255,0.2); }
+.message-box {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.7); padding: 15px 20px; border-radius: 10px;
+    text-align: center; display: none; z-index: 10;
+}
 </style>
 </head>
 <body>
@@ -59,7 +59,7 @@ let showDeepSky = true;
 let azimuth = 0, altitude = 0;
 const fov = 60; // degrees
 
-// Stars (bright stars for naked eye)
+// Stars (bright stars)
 const stars = [
     {name:"Sirius", ra:101.2875, dec:-16.7161, mag:-1.46},
     {name:"Vega", ra:279.2347, dec:38.7837, mag:0.03},
@@ -68,7 +68,7 @@ const stars = [
     {name:"Capella", ra:79.1723, dec:45.9979, mag:0.08}
 ];
 
-// Deep-sky objects (in red)
+// Deep-sky objects (red markers)
 const deepSky = [
     {name:"Andromeda Galaxy", ra:10.6847, dec:41.269, size:30},
     {name:"Orion Nebula", ra:83.8016, dec:-5.3916, size:25},
@@ -101,7 +101,7 @@ function drawSky(lat, lon){
     function animate(){
         ctx.clearRect(0,0,canvas.width,canvas.height);
 
-        // Center crosshair
+        // Crosshair
         ctx.strokeStyle='rgba(255,255,255,0.7)';
         ctx.lineWidth=2;
         ctx.beginPath();
@@ -116,32 +116,35 @@ function drawSky(lat, lon){
         function drawObj(name, ra, dec, size, color){
             const eq = new Astronomy.Equatorial(ra, dec, 1);
             const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, 'normal');
-            if(hor.altitude>0){
-                let azDiff = hor.azimuth - azimuth;
-                if(azDiff>180) azDiff-=360;
-                else if(azDiff<-180) azDiff+=360;
-                const altDiff = hor.altitude - altitude;
-                const x = canvas.width/2 + (azDiff/fov)*canvas.width;
-                const y = canvas.height/2 - (altDiff/fov)*canvas.height;
-                if(x>0 && x<canvas.width && y>0 && y<canvas.height){
-                    ctx.beginPath();
-                    ctx.arc(x,y,size,0,Math.PI*2);
-                    ctx.fillStyle=color;
-                    ctx.fill();
-                    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
-                    ctx.fillStyle='white'; ctx.font=`${Math.max(12,size/2+4)}px Arial`;
-                    ctx.fillText(name,x+size+5,y+5);
-                }
+            // Always draw, even if Sun is up
+            let azDiff = hor.azimuth - azimuth;
+            if(azDiff>180) azDiff-=360;
+            else if(azDiff<-180) azDiff+=360;
+            const altDiff = hor.altitude - altitude;
+            const x = canvas.width/2 + (azDiff/fov)*canvas.width;
+            const y = canvas.height/2 - (altDiff/fov)*canvas.height;
+            if(x>0 && x<canvas.width && y>0 && y<canvas.height){
+                // Glow effect
+                ctx.shadowBlur=15; ctx.shadowColor=color;
+                ctx.beginPath();
+                ctx.arc(x,y,size,0,Math.PI*2);
+                ctx.fillStyle=color;
+                ctx.fill();
+                ctx.shadowBlur=0;
+                ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+                ctx.fillStyle='white'; ctx.font=`${Math.max(12,size/2+4)}px Arial`;
+                ctx.fillText(name,x+size+5,y+5);
             }
         }
 
-        // Visible sky
+        // Visible sky objects
         const sunEq = Astronomy.Equator('Sun',time,observer,true,true);
         drawObj('Sun',sunEq.ra,sunEq.dec,25,'rgba(255,255,0,0.9)');
         const moonEq = Astronomy.Equator('Moon',time,observer,true,true);
         drawObj('Moon',moonEq.ra,moonEq.dec,20,'rgba(200,200,255,0.9)');
         stars.forEach(s=>drawObj(s.name,s.ra,s.dec,Math.max(5,10-s.mag),'rgba(0,255,255,0.8)'));
 
+        // Deep-sky objects
         if(showDeepSky){
             deepSky.forEach(d=>drawObj(d.name,d.ra,d.dec,d.size,'rgba(255,0,0,0.8)'));
         }
