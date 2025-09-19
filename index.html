@@ -23,6 +23,8 @@ button {
     padding: 12px 18px; font-size: 16px; border-radius: 8px;
     border: 1px solid white; background: rgba(0,0,0,0.6); color: white;
     cursor: pointer; transition: 0.3s;
+    /* Add a subtle hover effect and shadow for a better look */
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
 }
 button:hover { background: rgba(255,255,255,0.2); }
 .message-box {
@@ -47,8 +49,14 @@ button:hover { background: rgba(255,255,255,0.2); }
 const video = document.getElementById('camera');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// Initial resize
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+// Listen for window resize to keep canvas responsive
+window.addEventListener('resize', resizeCanvas);
 
 const startBtn = document.getElementById('startBtn');
 const toggleBtn = document.getElementById('toggleBtn');
@@ -83,15 +91,18 @@ function showMsg(text){
     setTimeout(()=>msgBox.style.display='none',3000);
 }
 
-// Device orientation
-window.addEventListener('deviceorientation', e=>{
-    if(e.alpha!==null){ azimuth = (360 - e.alpha)%360; altitude = e.beta; }
-});
+// Device orientation logic - now with proper iOS permission handling
+function handleDeviceOrientation(e) {
+    if(e.alpha!==null){
+        azimuth = (360 - e.alpha)%360;
+        altitude = e.beta;
+    }
+}
 
 // Toggle deep-sky mode
 toggleBtn.addEventListener('click', ()=>{
     showDeepSky = !showDeepSky;
-    toggleBtn.textContent = showDeepSky ? 'Hide Deep Sky' : 'Show Deep Sky';
+    toggleBtn.textContent = showDeepSky ? 'Toggle Deep Sky' : 'Toggle Visible Sky';
     showMsg(showDeepSky ? 'Deep Sky Mode' : 'Visible Sky Mode');
 });
 
@@ -156,20 +167,42 @@ function drawSky(lat, lon){
 
 // Start AR
 startBtn.addEventListener('click', async ()=>{
+    // Hide start button immediately
+    startBtn.style.display = 'none';
+
+    // Request camera access
     try{
         const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
         video.srcObject = stream;
-        video.style.display='block';
-        startBtn.style.display='none';
+        video.style.display='block'; // Make the video visible
         toggleBtn.style.display='inline-block';
         showMsg('Point device to the sky to see celestial objects');
+
+        // Geolocation and sensor permissions
         navigator.geolocation.getCurrentPosition(pos=>{
+            // Start the AR drawing after getting a location
             drawSky(pos.coords.latitude,pos.coords.longitude);
         }, err=>{
             showMsg('Geolocation failed, defaulting to 0,0');
             drawSky(0,0);
         });
-    }catch(e){ showMsg('Camera access denied'); }
+
+        // Request device orientation permission for iOS 13+
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission === 'granted') {
+                window.addEventListener('deviceorientation', handleDeviceOrientation);
+            } else {
+                showMsg('Motion sensor permission denied.');
+            }
+        } else {
+            // Non-iOS devices, listen immediately
+            window.addEventListener('deviceorientation', handleDeviceOrientation);
+        }
+
+    }catch(e){
+        showMsg('Camera access denied');
+    }
 });
 </script>
 </body>
