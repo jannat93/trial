@@ -46,7 +46,6 @@ button:hover { background: rgba(255,255,255,0.2); }
     <button id="startBtn">Start AR 🌌</button>
     <button id="toggleBtn" style="display:none;">Toggle Deep Sky</button>
 </div>
-<div class="message-box" id="msgBox"><p id="msgText"></p></div>
 
 <script>
 const video = document.getElementById('camera');
@@ -63,8 +62,6 @@ window.addEventListener('resize', resizeCanvas);
 
 const startBtn = document.getElementById('startBtn');
 const toggleBtn = document.getElementById('toggleBtn');
-const msgBox = document.getElementById('msgBox');
-const msgText = document.getElementById('msgText');
 
 let showDeepSky = true;
 let azimuth = 0, altitude = 0;
@@ -88,15 +85,9 @@ const deepSky = [
     {name:"Milky Way Center", ra:266.4168, dec:-29.0078, size:35}
 ];
 
-// Artificial objects
+// Artificial objects (Moon + 3 Stars)
 let artificialObjects = [];
 let showArtificialMilkyWay = false;
-
-function showMsg(text){
-    msgText.textContent=text;
-    msgBox.style.display='block';
-    setTimeout(()=>msgBox.style.display='none',3000);
-}
 
 function deg2hour(deg){ return deg / 15; }
 
@@ -112,7 +103,6 @@ function handleDeviceOrientation(e) {
 toggleBtn.addEventListener('click', ()=>{
     showDeepSky = !showDeepSky;
     toggleBtn.textContent = showDeepSky ? 'Toggle Deep Sky' : 'Toggle Visible Sky';
-    showMsg(showDeepSky ? 'Deep Sky Mode' : 'Visible Sky Mode');
 
     if(showDeepSky){
         // Artificial objects appear after 10 seconds
@@ -124,12 +114,6 @@ toggleBtn.addEventListener('click', ()=>{
                 {name:"ArtStar3", size:6, color:"rgba(220,220,255,0.9)"}
             ];
             showArtificialMilkyWay = true;
-
-            // Message appears 5 sec later (15s total)
-            setTimeout(()=>{
-                showMsg("Artificial Moon & Milky Way appeared 🌌");
-            },5000);
-
         },10000);
     } else {
         artificialObjects = [];
@@ -195,34 +179,43 @@ function drawSky(lat, lon){
             deepSky.forEach(d=>drawObj(d.name,d.ra,d.dec,d.size,'rgba(255,0,0,0.8)'));
         }
 
-        // Artificial objects (fixed positions)
+        // Artificial objects (twinkling)
         artificialObjects.forEach((o,i)=>{
             let x = (canvas.width / (artificialObjects.length+1)) * (i+1);
             let y = canvas.height * 0.3 + (i*40);
 
-            ctx.shadowBlur=20; 
+            // Twinkling animation
+            let pulse = 0.5 + 0.5 * Math.sin(Date.now()/500 + i);
+            let twinkleSize = o.size * (0.9 + 0.2*pulse);
+            let alpha = 0.7 + 0.3*pulse;
+
+            ctx.shadowBlur=30; 
             ctx.shadowColor=o.color;
             ctx.beginPath();
-            ctx.arc(x,y,o.size,0,Math.PI*2);
-            ctx.fillStyle=o.color;
+            ctx.arc(x, y, twinkleSize, 0, Math.PI*2);
+            ctx.fillStyle = o.color.replace(/[\d.]+\)$/g, alpha + ')');
             ctx.fill();
             ctx.shadowBlur=0;
-            ctx.strokeStyle=o.color; 
-            ctx.lineWidth=2; 
+
+            ctx.strokeStyle = o.color; 
+            ctx.lineWidth = 2; 
             ctx.stroke();
-            ctx.fillStyle='white'; 
-            ctx.font=`${Math.max(12,o.size/2+4)}px Arial`;
-            ctx.fillText(o.name,x+o.size+5,y+5);
+
+            ctx.fillStyle = 'white'; 
+            ctx.font = `${Math.max(12, o.size/2+4)}px Arial`;
+            ctx.fillText(o.name, x+o.size+5, y+5);
         });
 
         // Artificial Milky Way band
         if(showArtificialMilkyWay){
-            let gradient = ctx.createLinearGradient(0,canvas.height*0.3,canvas.width,canvas.height*0.7);
-            gradient.addColorStop(0,"rgba(255,255,255,0.05)");
-            gradient.addColorStop(0.5,"rgba(200,200,255,0.1)");
-            gradient.addColorStop(1,"rgba(255,255,255,0.05)");
+            let gradient = ctx.createLinearGradient(0, canvas.height*0.2, canvas.width, canvas.height*0.8);
+            gradient.addColorStop(0,"rgba(255,255,255,0.02)");
+            gradient.addColorStop(0.3,"rgba(200,200,255,0.08)");
+            gradient.addColorStop(0.5,"rgba(255,255,255,0.15)");
+            gradient.addColorStop(0.7,"rgba(200,200,255,0.08)");
+            gradient.addColorStop(1,"rgba(255,255,255,0.02)");
             ctx.fillStyle = gradient;
-            ctx.fillRect(0,canvas.height*0.3,canvas.width,canvas.height*0.4);
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
         requestAnimationFrame(animate);
@@ -239,7 +232,6 @@ startBtn.addEventListener('click', async ()=>{
         video.srcObject = stream;
         video.style.display='block';
         toggleBtn.style.display='inline-block';
-        showMsg('Point device to the sky to see celestial objects');
 
         // NASA APOD background
         fetch("https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY")
@@ -254,7 +246,6 @@ startBtn.addEventListener('click', async ()=>{
         navigator.geolocation.getCurrentPosition(pos=>{
             drawSky(pos.coords.latitude,pos.coords.longitude);
         }, err=>{
-            showMsg('Geolocation failed, defaulting to 0,0');
             drawSky(0,0);
         });
 
@@ -262,15 +253,13 @@ startBtn.addEventListener('click', async ()=>{
             const permission = await DeviceOrientationEvent.requestPermission();
             if (permission === 'granted') {
                 window.addEventListener('deviceorientation', handleDeviceOrientation);
-            } else {
-                showMsg('Motion sensor permission denied.');
             }
         } else {
             window.addEventListener('deviceorientation', handleDeviceOrientation);
         }
 
     }catch(e){
-        showMsg('Camera access denied');
+        console.log('Camera access denied');
     }
 });
 </script>
