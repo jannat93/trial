@@ -1,46 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AR Sky 🌌</title>
-<script src="https://cdn.jsdelivr.net/npm/astronomy-engine/astronomy.min.js"></script>
-<style>
-html, body {
-    margin: 0; padding: 0; width: 100%; height: 100%;
-    overflow: hidden; font-family: 'Segoe UI', sans-serif;
-    background: black; color: white;
-}
-#camera-container { position: relative; width: 100%; height: 100%; }
-#camera { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 0; display: none; }
-#overlay { position: absolute; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
-#nasa-bg {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    object-fit: cover; z-index: -1; opacity: 0.25; display: none;
-}
-#controls {
-    position: absolute; bottom: 15px; width: 100%; display: flex;
-    justify-content: center; gap: 10px; z-index: 2;
-}
-button {
-    padding: 12px 18px; font-size: 16px; border-radius: 8px;
-    border: 1px solid white; background: rgba(0,0,0,0.6); color: white;
-    cursor: pointer; transition: 0.3s;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-}
-button:hover { background: rgba(255,255,255,0.2); }
-.message-box {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: rgba(0,0,0,0.7); padding: 15px 20px; border-radius: 10px;
-    text-align: center; display: none; z-index: 10;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Sky 🌌</title>
+    <style>
+        html, body {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background: black; color: white;
+            font-family: sans-serif;
+        }
+        #camera-container { position: relative; width: 100%; height: 100%; }
+        #camera { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 0; display: none; }
+        #overlay { position: absolute; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+        
+        #controls {
+            position: absolute; bottom: 15px; width: 100%; display: flex;
+            justify-content: center; gap: 10px; z-index: 2;
+        }
+        button {
+            padding: 12px 18px; font-size: 16px; border-radius: 8px;
+            border: 1px solid white; background: rgba(0,0,0,0.7); color: white;
+            cursor: pointer; transition: 0.3s;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5); /* Subtle neon glow for buttons */
+        }
+        button:hover { 
+            background: rgba(255,255,255,0.2); 
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+        }
+
+        #message {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            padding: 20px; background: rgba(0, 0, 0, 0.8); border: 2px solid cyan;
+            border-radius: 10px; z-index: 3; text-align: center;
+        }
+    </style>
 </head>
 <body>
 <div id="camera-container">
     <video id="camera" autoplay playsinline></video>
-    <img id="nasa-bg" alt="NASA APOD Background">
     <canvas id="overlay"></canvas>
+    <!-- Element for displaying messages like camera errors -->
+    <div id="message" style="display:none;"></div>
 </div>
 <div id="controls">
     <button id="startBtn">Start AR 🌌</button>
@@ -48,218 +49,129 @@ button:hover { background: rgba(255,255,255,0.2); }
 </div>
 
 <script>
-const video = document.getElementById('camera');
-const canvas = document.getElementById('overlay');
-const ctx = canvas.getContext('2d');
-const nasaBg = document.getElementById('nasa-bg');
+const video = document.getElementById("camera");
+const canvas = document.getElementById("overlay");
+const ctx = canvas.getContext("2d");
+const startBtn = document.getElementById("startBtn");
+const toggleBtn = document.getElementById("toggleBtn");
+const messageBox = document.getElementById("message");
+
+let showDeepSky = false;
+let artificialObjects = [];
+let showArtificialMilkyWay = false;
+
+// --- UTILITY FUNCTIONS ---
 
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 }
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas(); // Initial call
 
-const startBtn = document.getElementById('startBtn');
-const toggleBtn = document.getElementById('toggleBtn');
-
-let showDeepSky = true;
-let azimuth = 0, altitude = 0;
-const fov = 60; // degrees
-
-// Stars (bright ones)
-const stars = [
-    {name:"Sirius", ra:101.2875, dec:-16.7161, mag:-1.46},
-    {name:"Vega", ra:279.2347, dec:38.7837, mag:0.03},
-    {name:"Betelgeuse", ra:88.7929, dec:7.4071, mag:0.42},
-    {name:"Rigel", ra:78.6345, dec:-8.2016, mag:0.12},
-    {name:"Capella", ra:79.1723, dec:45.9979, mag:0.08}
-];
-
-// Deep-sky objects
-const deepSky = [
-    {name:"Andromeda Galaxy", ra:10.6847, dec:41.269, size:30},
-    {name:"Orion Nebula", ra:83.8016, dec:-5.3916, size:25},
-    {name:"Pleiades Cluster", ra:56.75, dec:24.1, size:20},
-    {name:"Crab Nebula", ra:83.6331, dec:22.0145, size:15},
-    {name:"Milky Way Center", ra:266.4168, dec:-29.0078, size:35}
-];
-
-// Artificial objects (Moon + 3 Stars)
-let artificialObjects = [];
-let showArtificialMilkyWay = false;
-
-function deg2hour(deg){ return deg / 15; }
-
-// Device orientation
-function handleDeviceOrientation(e) {
-    if(e.alpha!==null){
-        azimuth = (360 - e.alpha)%360;
-        altitude = e.beta;
-    }
+/**
+ * Displays a message to the user (instead of using alert()).
+ * @param {string} msg 
+ */
+function showMessage(msg) {
+    messageBox.textContent = msg;
+    messageBox.style.display = "block";
+    
+    // Auto-hide the message after 5 seconds
+    setTimeout(() => {
+        messageBox.style.display = "none";
+    }, 5000);
 }
 
-// Toggle deep-sky
-toggleBtn.addEventListener('click', ()=>{
-    showDeepSky = !showDeepSky;
-    toggleBtn.textContent = showDeepSky ? 'Toggle Deep Sky' : 'Toggle Visible Sky';
 
-    if(showDeepSky){
-        // Artificial objects appear after 10 seconds
-        setTimeout(()=>{
+// --- AR DRAWING LOGIC ---
+
+function drawSky() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Artificial Milky Way band (faint galactic glow)
+    if (showArtificialMilkyWay) {
+        let gradient = ctx.createLinearGradient(0, canvas.height*0.2, canvas.width, canvas.height*0.8);
+        gradient.addColorStop(0,"rgba(255,255,255,0.03)");
+        gradient.addColorStop(0.5,"rgba(200,200,255,0.15)");
+        gradient.addColorStop(1,"rgba(255,255,255,0.03)");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Artificial Moon + Stars (twinkling/pulsing)
+    artificialObjects.forEach((o,i)=>{
+        // Calculate pulse/twinkle effect based on time
+        let pulse = 0.5 + 0.5 * Math.sin(Date.now()/500 + i); 
+        let twinkleSize = o.size * (0.9 + 0.2 * pulse);
+        let alpha = 0.7 + 0.3 * pulse;
+
+        // Apply blur for glow effect
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = o.color;
+        
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, twinkleSize, 0, Math.PI*2);
+        // Update color alpha for twinkling effect
+        ctx.fillStyle = o.color.replace(/[\d.]+\)$/g, alpha + ")"); 
+        ctx.fill();
+        
+        // Clear shadow immediately to prevent it affecting the next object/frame
+        ctx.shadowBlur = 0; 
+    });
+
+    requestAnimationFrame(drawSky);
+}
+
+drawSky(); // Start the animation loop
+
+
+// --- EVENT HANDLERS ---
+
+toggleBtn.addEventListener("click", () => {
+    showDeepSky = !showDeepSky;
+    toggleBtn.textContent = showDeepSky ? "Deep Sky On" : "Deep Sky Off";
+
+    if (showDeepSky) {
+        // Dramatic reveal after a delay (simulating processing/calibration)
+        showMessage("Calibrating sensors... Revealing deep space in 10 seconds.");
+        setTimeout(() => {
             artificialObjects = [
-                {name:"Artificial Moon", size:35, color:"rgba(240,240,255,0.95)"},
-                {name:"ArtStar1", size:8, color:"rgba(200,220,255,0.9)"},
-                {name:"ArtStar2", size:7, color:"rgba(180,220,255,0.9)"},
-                {name:"ArtStar3", size:6, color:"rgba(220,220,255,0.9)"}
+                { name: "Artificial Moon", x: canvas.width/2, y: canvas.height*0.3, size: 40, color: "rgba(240,240,255,0.95)" },
+                // Reduced sizes for a more realistic, pinpoint look
+                { name: "Star A", x: canvas.width*0.3, y: canvas.height*0.2, size: 3, color: "rgba(200,220,255,0.9)" },
+                { name: "Star B", x: canvas.width*0.7, y: canvas.height*0.25, size: 2, color: "rgba(180,220,255,0.9)" },
+                { name: "Star C", x: canvas.width*0.5, y: canvas.height*0.15, size: 2.5, color: "rgba(220,220,255,0.9)" }
             ];
             showArtificialMilkyWay = true;
-        },10000);
+            showMessage("Deep Space objects detected!");
+        }, 10000);
     } else {
         artificialObjects = [];
         showArtificialMilkyWay = false;
+        showMessage("Deep Sky view deactivated.");
     }
 });
 
-// Draw sky
-function drawSky(lat, lon){
-    const observer = new Astronomy.Observer(lat, lon, 0);
-    function animate(){
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-
-        // Crosshair
-        ctx.strokeStyle='rgba(255,255,255,0.7)';
-        ctx.lineWidth=2;
-        ctx.beginPath();
-        ctx.moveTo(canvas.width/2-15,canvas.height/2);
-        ctx.lineTo(canvas.width/2+15,canvas.height/2);
-        ctx.moveTo(canvas.width/2,canvas.height/2-15);
-        ctx.lineTo(canvas.width/2,canvas.height/2+15);
-        ctx.stroke();
-
-        const time = Astronomy.MakeTime(new Date());
-
-        function drawObj(name, raDeg, dec, size, color){
-            const raHours = deg2hour(raDeg);
-            const eq = new Astronomy.Equatorial(raHours, dec, 1);
-            const hor = Astronomy.Horizon(time, observer, eq.ra, eq.dec, 'normal');
-            
-            let azDiff = hor.azimuth - azimuth;
-            if(azDiff>180) azDiff-=360;
-            else if(azDiff<-180) azDiff+=360;
-            const altDiff = hor.altitude - altitude;
-
-            const x = canvas.width/2 + (azDiff/fov)*canvas.width;
-            const y = canvas.height/2 - (altDiff/fov)*canvas.height;
-
-            if(x>0 && x<canvas.width && y>0 && y<canvas.height){
-                ctx.shadowBlur=20; ctx.shadowColor=color;
-                ctx.beginPath();
-                ctx.arc(x,y,size,0,Math.PI*2);
-                ctx.fillStyle=color;
-                ctx.fill();
-                ctx.shadowBlur=0;
-                ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
-                ctx.fillStyle='white'; ctx.font=`${Math.max(12,size/2+4)}px Arial`;
-                ctx.fillText(name,x+size+5,y+5);
-            }
-        }
-
-        // Sun & Moon
-        const sunEq = Astronomy.Equator('Sun',time,observer,true,true);
-        drawObj('Sun', sunEq.ra*15, sunEq.dec, 25, 'rgba(255,255,0,0.9)');
-        const moonEq = Astronomy.Equator('Moon',time,observer,true,true);
-        drawObj('Moon', moonEq.ra*15, moonEq.dec, 20, 'rgba(200,200,255,0.9)');
-
-        // Stars
-        stars.forEach(s=>drawObj(s.name,s.ra,s.dec,Math.max(5,10-s.mag),'rgba(0,255,255,0.8)'));
-
-        // Deep-sky
-        if(showDeepSky){
-            deepSky.forEach(d=>drawObj(d.name,d.ra,d.dec,d.size,'rgba(255,0,0,0.8)'));
-        }
-
-        // Artificial objects (twinkling)
-        artificialObjects.forEach((o,i)=>{
-            let x = (canvas.width / (artificialObjects.length+1)) * (i+1);
-            let y = canvas.height * 0.3 + (i*40);
-
-            // Twinkling animation
-            let pulse = 0.5 + 0.5 * Math.sin(Date.now()/500 + i);
-            let twinkleSize = o.size * (0.9 + 0.2*pulse);
-            let alpha = 0.7 + 0.3*pulse;
-
-            ctx.shadowBlur=30; 
-            ctx.shadowColor=o.color;
-            ctx.beginPath();
-            ctx.arc(x, y, twinkleSize, 0, Math.PI*2);
-            ctx.fillStyle = o.color.replace(/[\d.]+\)$/g, alpha + ')');
-            ctx.fill();
-            ctx.shadowBlur=0;
-
-            ctx.strokeStyle = o.color; 
-            ctx.lineWidth = 2; 
-            ctx.stroke();
-
-            ctx.fillStyle = 'white'; 
-            ctx.font = `${Math.max(12, o.size/2+4)}px Arial`;
-            ctx.fillText(o.name, x+o.size+5, y+5);
-        });
-
-        // Artificial Milky Way band
-        if(showArtificialMilkyWay){
-            let gradient = ctx.createLinearGradient(0, canvas.height*0.2, canvas.width, canvas.height*0.8);
-            gradient.addColorStop(0,"rgba(255,255,255,0.02)");
-            gradient.addColorStop(0.3,"rgba(200,200,255,0.08)");
-            gradient.addColorStop(0.5,"rgba(255,255,255,0.15)");
-            gradient.addColorStop(0.7,"rgba(200,200,255,0.08)");
-            gradient.addColorStop(1,"rgba(255,255,255,0.02)");
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        requestAnimationFrame(animate);
-    }
-    animate();
-}
-
-// Start AR
-startBtn.addEventListener('click', async ()=>{
-    startBtn.style.display = 'none';
-
-    try{
+startBtn.addEventListener("click", async ()=>{
+    try {
+        // Request access to the environment (back) camera
         const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+        
         video.srcObject = stream;
-        video.style.display='block';
-        toggleBtn.style.display='inline-block';
+        video.style.display = "block";
 
-        // NASA APOD background
-        fetch("https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY")
-        .then(res=>res.json())
-        .then(data=>{
-            if(data.media_type === "image"){
-                nasaBg.src = data.url;
-                nasaBg.style.display = "block";
-            }
-        });
+        // Hide start button and show AR control
+        startBtn.style.display = "none";
+        toggleBtn.style.display = "inline-block";
 
-        navigator.geolocation.getCurrentPosition(pos=>{
-            drawSky(pos.coords.latitude,pos.coords.longitude);
-        }, err=>{
-            drawSky(0,0);
-        });
-
-        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-            const permission = await DeviceOrientationEvent.requestPermission();
-            if (permission === 'granted') {
-                window.addEventListener('deviceorientation', handleDeviceOrientation);
-            }
-        } else {
-            window.addEventListener('deviceorientation', handleDeviceOrientation);
-        }
-
-    }catch(e){
-        console.log('Camera access denied');
+    } catch (e) {
+        console.error("Camera access failed:", e);
+        // Show user-friendly error message
+        showMessage("Error: Camera access denied or not supported. Please allow camera permissions.");
+        
+        // Keep the start button visible so the user can retry
+        startBtn.style.display = "inline-block"; 
     }
 });
 </script>
