@@ -88,7 +88,7 @@ const deepSky = [
     {name:"Milky Way Center", ra:266.4168, dec:-29.0078, size:35}
 ];
 
-// Artificial objects (added later)
+// Artificial objects
 let artificialObjects = [];
 let showArtificialMilkyWay = false;
 
@@ -115,15 +115,21 @@ toggleBtn.addEventListener('click', ()=>{
     showMsg(showDeepSky ? 'Deep Sky Mode' : 'Visible Sky Mode');
 
     if(showDeepSky){
+        // Artificial objects appear after 10 seconds
         setTimeout(()=>{
             artificialObjects = [
-                {name:"Artificial Moon", ra:150, dec:10, size:35, color:"rgba(240,240,255,0.95)"},
-                {name:"ArtStar1", ra:160, dec:15, size:8, color:"rgba(200,220,255,0.9)"},
-                {name:"ArtStar2", ra:170, dec:5, size:7, color:"rgba(180,220,255,0.9)"},
-                {name:"ArtStar3", ra:175, dec:12, size:6, color:"rgba(220,220,255,0.9)"}
+                {name:"Artificial Moon", size:35, color:"rgba(240,240,255,0.95)"},
+                {name:"ArtStar1", size:8, color:"rgba(200,220,255,0.9)"},
+                {name:"ArtStar2", size:7, color:"rgba(180,220,255,0.9)"},
+                {name:"ArtStar3", size:6, color:"rgba(220,220,255,0.9)"}
             ];
             showArtificialMilkyWay = true;
-            showMsg("Artificial Moon & Milky Way appeared 🌌");
+
+            // Message appears 5 sec later (15s total)
+            setTimeout(()=>{
+                showMsg("Artificial Moon & Milky Way appeared 🌌");
+            },5000);
+
         },10000);
     } else {
         artificialObjects = [];
@@ -189,8 +195,25 @@ function drawSky(lat, lon){
             deepSky.forEach(d=>drawObj(d.name,d.ra,d.dec,d.size,'rgba(255,0,0,0.8)'));
         }
 
-        // Artificial objects
-        artificialObjects.forEach(o=>drawObj(o.name,o.ra,o.dec,o.size,o.color));
+        // Artificial objects (fixed positions)
+        artificialObjects.forEach((o,i)=>{
+            let x = (canvas.width / (artificialObjects.length+1)) * (i+1);
+            let y = canvas.height * 0.3 + (i*40);
+
+            ctx.shadowBlur=20; 
+            ctx.shadowColor=o.color;
+            ctx.beginPath();
+            ctx.arc(x,y,o.size,0,Math.PI*2);
+            ctx.fillStyle=o.color;
+            ctx.fill();
+            ctx.shadowBlur=0;
+            ctx.strokeStyle=o.color; 
+            ctx.lineWidth=2; 
+            ctx.stroke();
+            ctx.fillStyle='white'; 
+            ctx.font=`${Math.max(12,o.size/2+4)}px Arial`;
+            ctx.fillText(o.name,x+o.size+5,y+5);
+        });
 
         // Artificial Milky Way band
         if(showArtificialMilkyWay){
@@ -218,8 +241,8 @@ startBtn.addEventListener('click', async ()=>{
         toggleBtn.style.display='inline-block';
         showMsg('Point device to the sky to see celestial objects');
 
-        // Get NASA APOD image
-        fetch("https://api.nasa.gov/planetary/apod?api_key=PYXsvSeHJbwMEqQ1RGeittsd7gfSxKvGu5DCr4mT")
+        // NASA APOD background
+        fetch("https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY")
         .then(res=>res.json())
         .then(data=>{
             if(data.media_type === "image"){
