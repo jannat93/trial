@@ -219,7 +219,7 @@ startBtn.addEventListener('click', async ()=>{
         showMsg('Point device to the sky to see celestial objects');
 
         // Get NASA APOD image
-        fetch("https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY")
+        fetch("https://api.nasa.gov/planetary/apod?api_key=PYXsvSeHJbwMEqQ1RGeittsd7gfSxKvGu5DCr4mT")
         .then(res=>res.json())
         .then(data=>{
             if(data.media_type === "image"){
