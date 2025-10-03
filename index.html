@@ -1,179 +1,297 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Sky 🌌</title>
-    <style>
-        html, body {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            overflow: hidden; background: black; color: white;
-            font-family: sans-serif;
-        }
-        #camera-container { position: relative; width: 100%; height: 100%; }
-        #camera { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 0; display: none; }
-        #overlay { position: absolute; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
-        
-        #controls {
-            position: absolute; bottom: 15px; width: 100%; display: flex;
-            justify-content: center; gap: 10px; z-index: 2;
-        }
-        button {
-            padding: 12px 18px; font-size: 16px; border-radius: 8px;
-            border: 1px solid white; background: rgba(0,0,0,0.7); color: white;
-            cursor: pointer; transition: 0.3s;
-            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5); /* Subtle neon glow for buttons */
-        }
-        button:hover { 
-            background: rgba(255,255,255,0.2); 
-            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Star Mysteries Explorer — Drag to Partner</title>
+  <style>
+    :root{--neon:#00ffea;--bg:#000}
+    html,body{height:100%;margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:#fff}
+    canvas{display:block;position:fixed;inset:0;background:black}
 
-        #message {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            padding: 20px; background: rgba(0, 0, 0, 0.8); border: 2px solid cyan;
-            border-radius: 10px; z-index: 3; text-align: center;
-        }
-    </style>
+    /* Info box (tooltip) */
+    .infoBox{
+      position:absolute;
+      width:280px;
+      background:rgba(2,6,12,0.92);
+      border:1px solid rgba(0,255,234,0.9);
+      box-shadow:0 10px 30px rgba(0,255,234,0.06),0 0 12px rgba(0,255,234,0.06) inset;
+      padding:12px;
+      border-radius:10px;
+      z-index:1000;
+      pointer-events:auto; /* allow dragging and clicking */
+      cursor:grab;
+    }
+    .infoBox:active{cursor:grabbing}
+    .infoBox h2{margin:0 0 6px;color:#ffd700;font-size:18px}
+    .infoBox p{margin:4px 0;font-size:13px;color:#dff}
+    .infoBox .controls{display:flex;gap:8px;margin-top:8px}
+    .infoBox button{background:transparent;border:1px solid rgba(255,255,255,0.08);color:var(--neon);padding:6px 8px;border-radius:6px;cursor:pointer}
+    .infoBox button:hover{background:rgba(0,255,234,0.04)}
+
+    /* Lifeline canvas inside info box */
+    canvas.lifeline{display:block;width:100%;height:56px;background:black;border:1px solid rgba(0,255,234,0.06);margin-top:8px;border-radius:6px}
+
+    /* Small mobile adjustments */
+    @media (max-width:520px){.infoBox{width:92%}}
+  </style>
 </head>
 <body>
-<div id="camera-container">
-    <video id="camera" autoplay playsinline></video>
-    <canvas id="overlay"></canvas>
-    <!-- Element for displaying messages like camera errors -->
-    <div id="message" style="display:none;"></div>
-</div>
-<div id="controls">
-    <button id="startBtn">Start AR 🌌</button>
-    <button id="toggleBtn" style="display:none;">Toggle Deep Sky</button>
-</div>
+  <canvas id="starCanvas"></canvas>
 
-<script>
-const video = document.getElementById("camera");
-const canvas = document.getElementById("overlay");
-const ctx = canvas.getContext("2d");
-const startBtn = document.getElementById("startBtn");
-const toggleBtn = document.getElementById("toggleBtn");
-const messageBox = document.getElementById("message");
+  <script>
+    // --------- Setup canvas & resize ---------
+    const canvas = document.getElementById('starCanvas');
+    const ctx = canvas.getContext('2d');
 
-let showDeepSky = false;
-let artificialObjects = [];
-let showArtificialMilkyWay = false;
+    function resize(){
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize, {passive:true});
+    resize();
 
-// --- UTILITY FUNCTIONS ---
+    // --------- Simple dataset (small) ---------
+    const stars = [
+      {id:'sirius', x:200, y:150, r:6, name:'Sirius A', brightness: -1.46, lifetime:'500M years', nextEvent:'Stable', partnerName:'Sirius B', partnerPos:{x:400,y:250}},
+      {id:'betel', x:500, y:320, r:9, name:'Betelgeuse', brightness:0.42, lifetime:'8M years', nextEvent:'May brighten', partnerName:null},
+      {id:'proxi', x:800, y:200, r:4, name:'Proxima Centauri', brightness:11.13, lifetime:'4B years', nextEvent:'Stable', partnerName:'Alpha Centauri', partnerPos:{x:950,y:250}}
+    ];
 
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas(); // Initial call
+    // Flags and helpers
+    let selectedStar = null;      // the star object currently selected
+    const SNAP_DISTANCE = 100;    // distance in px to snap/dock
 
-/**
- * Displays a message to the user (instead of using alert()).
- * @param {string} msg 
- */
-function showMessage(msg) {
-    messageBox.textContent = msg;
-    messageBox.style.display = "block";
-    
-    // Auto-hide the message after 5 seconds
-    setTimeout(() => {
-        messageBox.style.display = "none";
-    }, 5000);
-}
+    function drawScene(){
+      // black background
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
 
+      // faint background stars
+      for(let i=0;i<220;i++){
+        const x = (i*73 % canvas.width) + (Math.sin(i)*3);
+        const y = (i*37 % canvas.height) + (Math.cos(i)*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.03)';
+        ctx.beginPath(); ctx.arc(x,y, Math.random()*1.2 + 0.2, 0, Math.PI*2); ctx.fill();
+      }
 
-// --- AR DRAWING LOGIC ---
+      // draw partners first (so they appear under orbiting stars)
+      stars.forEach(s => {
+        if (s.partnerPos) {
+          ctx.beginPath(); ctx.arc(s.partnerPos.x, s.partnerPos.y, 6, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(180,180,255,0.9)'; ctx.fill();
+          // subtle ring
+          ctx.strokeStyle = 'rgba(0,255,234,0.06)'; ctx.lineWidth=1; ctx.stroke();
+        }
+      });
 
-function drawSky() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // draw each star (if orbiting, its x/y are updated elsewhere)
+      stars.forEach(s=>{
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+        ctx.fillStyle = 'white'; ctx.fill();
+        // small glow
+        ctx.fillStyle = 'rgba(0,255,234,0.04)'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r*3.6, 0, Math.PI*2); ctx.fill();
+      });
 
-    // Artificial Milky Way band (faint galactic glow)
-    if (showArtificialMilkyWay) {
-        let gradient = ctx.createLinearGradient(0, canvas.height*0.2, canvas.width, canvas.height*0.8);
-        gradient.addColorStop(0,"rgba(255,255,255,0.03)");
-        gradient.addColorStop(0.5,"rgba(200,200,255,0.15)");
-        gradient.addColorStop(1,"rgba(255,255,255,0.03)");
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      requestAnimationFrame(drawScene);
+    }
+    drawScene();
+
+    // --------- Lifeline animation helper (per-canvas, cancels previous) ---------
+    function drawLifeline(lCanvas, intensity){
+      const c = lCanvas; const lc = c.getContext('2d');
+      if (c._anim) cancelAnimationFrame(c._anim);
+      let t = 0;
+      function loop(){
+        lc.clearRect(0,0,c.width,c.height);
+        lc.fillStyle = '#000'; lc.fillRect(0,0,c.width,c.height);
+        lc.strokeStyle = 'lime'; lc.lineWidth = 1.5;
+        lc.beginPath();
+        const W = c.width; const H = c.height;
+        for(let x=0;x<W;x+=2){
+          const px = x;
+          const y = H/2 + Math.sin((x/8) + (t/6)) * (2 + intensity);
+          if (x===0) lc.moveTo(px,y); else lc.lineTo(px,y);
+        }
+        lc.stroke();
+        t += 0.8;
+        c._anim = requestAnimationFrame(loop);
+      }
+      loop();
     }
 
-    // Artificial Moon + Stars (twinkling/pulsing)
-    artificialObjects.forEach((o,i)=>{
-        // Calculate pulse/twinkle effect based on time
-        let pulse = 0.5 + 0.5 * Math.sin(Date.now()/500 + i); 
-        let twinkleSize = o.size * (0.9 + 0.2 * pulse);
-        let alpha = 0.7 + 0.3 * pulse;
+    // --------- Utility helpers ---------
+    function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+    function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+    function lerp(a,b,t){return a + (b-a)*t}
 
-        // Apply blur for glow effect
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = o.color;
-        
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, twinkleSize, 0, Math.PI*2);
-        // Update color alpha for twinkling effect
-        ctx.fillStyle = o.color.replace(/[\d.]+\)$/g, alpha + ")"); 
-        ctx.fill();
-        
-        // Clear shadow immediately to prevent it affecting the next object/frame
-        ctx.shadowBlur = 0; 
+    // --------- Create / show info box beside a star ---------
+    function showInfoBoxFor(star){
+      // remove any existing box
+      document.querySelectorAll('.infoBox').forEach(n=>{ // cancel lifeline anim if present
+        const lc = n.querySelector('canvas.lifeline'); if(lc && lc._anim) cancelAnimationFrame(lc._anim);
+        n.remove();
+      });
+
+      selectedStar = star;
+
+      const box = document.createElement('div');
+      box.className = 'infoBox';
+      box.innerHTML = `
+        <h2>⭐ ${star.name}</h2>
+        <p><strong>Brightness:</strong> ${star.brightness}</p>
+        <p><strong>Lifetime:</strong> ${star.lifetime}</p>
+        <p><strong>Next Event:</strong> ${star.nextEvent}</p>
+        <p><strong>Partner:</strong> ${star.partnerName || 'None'}</p>
+        <canvas class="lifeline" width="250" height="56"></canvas>
+        <div class="controls">
+          <button id="goto">Go to Partner</button>
+          <button id="close">Close</button>
+        </div>
+      `;
+      document.body.appendChild(box);
+
+      // position box (to the right of the star) and vertically centered
+      const left = clamp(star.x + star.r + 12, 8, window.innerWidth - 16 - 280);
+      // wait to read offsetHeight reliably
+      box.style.left = left + 'px';
+      box.style.top = (star.y - 60) + 'px';
+      setTimeout(()=>{ box.style.top = clamp(star.y - box.offsetHeight/2, 8, window.innerHeight - box.offsetHeight - 8) + 'px'; }, 0);
+
+      // lifeline
+      const lc = box.querySelector('canvas.lifeline');
+      drawLifeline(lc, Math.max(1, Math.min(10, Math.abs(star.r))));
+
+      // drag behavior for the box — while dragging the star follows the box
+      let dragging = false, offX=0, offY=0;
+      box.addEventListener('mousedown', (ev)=>{
+        dragging = true; offX = ev.clientX - box.offsetLeft; offY = ev.clientY - box.offsetTop; box.style.cursor='grabbing';
+      });
+      window.addEventListener('mouseup', ()=>{
+        if (!dragging) return; dragging = false; box.style.cursor='grab';
+        // after drop: if near partner, snap and start orbit
+        if (star.partnerPos){
+          const infoCenter = {x: box.offsetLeft + box.offsetWidth/2, y: box.offsetTop + box.offsetHeight/2};
+          const d = Math.hypot(infoCenter.x - star.partnerPos.x, infoCenter.y - star.partnerPos.y);
+          if (d < SNAP_DISTANCE){
+            // snap the star to an orbit around partner
+            moveStarToOrbit(star, star.partnerPos);
+          }
+        }
+      });
+
+      window.addEventListener('mousemove', (ev)=>{
+        if (!dragging) return;
+        const newLeft = clamp(ev.clientX - offX, 4, window.innerWidth - box.offsetWidth - 4);
+        const newTop = clamp(ev.clientY - offY, 4, window.innerHeight - box.offsetHeight - 4);
+        box.style.left = newLeft + 'px'; box.style.top = newTop + 'px';
+        // make star follow box while dragging
+        star.x = newLeft - (star.r + 12); // keep star to left of box
+        star.y = newTop + box.offsetHeight/2;
+      });
+
+      // Go to partner button
+      const gotoBtn = box.querySelector('#goto');
+      gotoBtn.addEventListener('click', ()=>{
+        if (star.partnerPos) moveStarToOrbit(star, star.partnerPos);
+      });
+
+      // Close button
+      const closeBtn = box.querySelector('#close');
+      closeBtn.addEventListener('click', ()=>{
+        // remove box and stop orbiting
+        box.remove();
+        selectedStar = null;
+      });
+
+      // Attach box reference to star so it can follow during orbit
+      star._infoBox = box;
+    }
+
+    // --------- Move star to partner then start orbiting ---------
+    function moveStarToOrbit(star, partnerPos){
+      star.isOrbiting = false; // cancel any prior
+      const start = {x: star.x, y: star.y};
+      const targetRadius = 60; // chosen orbit radius
+      // compute desired angle based on current relative position
+      const desiredAngle = Math.atan2(start.y - partnerPos.y, start.x - partnerPos.x);
+      const targetX = partnerPos.x + targetRadius * Math.cos(desiredAngle);
+      const targetY = partnerPos.y + targetRadius * Math.sin(desiredAngle);
+
+      let t = 0;
+      function step(){
+        t += 0.04; // speed of move
+        star.x = lerp(start.x, targetX, t);
+        star.y = lerp(start.y, targetY, t);
+        // keep info box positioned near star while moving
+        if (star._infoBox){
+          star._infoBox.style.left = clamp(star.x + star.r + 12, 4, window.innerWidth - star._infoBox.offsetWidth - 4) + 'px';
+          star._infoBox.style.top = clamp(star.y - star._infoBox.offsetHeight/2, 4, window.innerHeight - star._infoBox.offsetHeight - 4) + 'px';
+        }
+        if (t < 1) requestAnimationFrame(step);
+        else {
+          // begin orbit
+          star.isOrbiting = true;
+          star.orbitCenter = partnerPos;
+          star.orbitRadius = targetRadius;
+          star.orbitAngle = desiredAngle;
+        }
+      }
+      step();
+    }
+
+    // --------- Orbit update inside separate loop ---------
+    function updateOrbits(){
+      stars.forEach(s=>{
+        if (s.isOrbiting && s.orbitCenter){
+          s.orbitAngle += 0.02; // orbit speed
+          s.x = s.orbitCenter.x + s.orbitRadius * Math.cos(s.orbitAngle);
+          s.y = s.orbitCenter.y + s.orbitRadius * Math.sin(s.orbitAngle);
+          // if it has an info box, keep it following
+          if (s._infoBox){
+            s._infoBox.style.left = clamp(s.x + s.r + 12, 4, window.innerWidth - s._infoBox.offsetWidth - 4) + 'px';
+            s._infoBox.style.top = clamp(s.y - s._infoBox.offsetHeight/2, 4, window.innerHeight - s._infoBox.offsetHeight - 4) + 'px';
+          }
+        }
+      });
+      requestAnimationFrame(updateOrbits);
+    }
+    updateOrbits();
+
+    // --------- Click detection: select star OR partner ---------
+    canvas.addEventListener('click', (ev)=>{
+      const rect = canvas.getBoundingClientRect();
+      const mx = ev.clientX - rect.left; const my = ev.clientY - rect.top;
+      // check partners first (so clicking a partner shows main star behavior)
+      for (const s of stars){
+        if (s.partnerPos){
+          const d = Math.hypot(mx - s.partnerPos.x, my - s.partnerPos.y);
+          if (d < 8){
+            // click on partner: show main star info and move main star to orbit
+            showInfoBoxFor(s);
+            moveStarToOrbit(s, s.partnerPos);
+            return;
+          }
+        }
+      }
+      // check stars
+      for (const s of stars){
+        const d = Math.hypot(mx - s.x, my - s.y);
+        if (d < s.r + 6){
+          showInfoBoxFor(s);
+          return;
+        }
+      }
     });
 
-    requestAnimationFrame(drawSky);
-}
-
-drawSky(); // Start the animation loop
-
-
-// --- EVENT HANDLERS ---
-
-toggleBtn.addEventListener("click", () => {
-    showDeepSky = !showDeepSky;
-    toggleBtn.textContent = showDeepSky ? "Deep Sky On" : "Deep Sky Off";
-
-    if (showDeepSky) {
-        // Dramatic reveal after a delay (simulating processing/calibration)
-        showMessage("Calibrating sensors... Revealing deep space in 10 seconds.");
-        setTimeout(() => {
-            artificialObjects = [
-                { name: "Artificial Moon", x: canvas.width/2, y: canvas.height*0.3, size: 40, color: "rgba(240,240,255,0.95)" },
-                // Reduced sizes for a more realistic, pinpoint look
-                { name: "Star A", x: canvas.width*0.3, y: canvas.height*0.2, size: 3, color: "rgba(200,220,255,0.9)" },
-                { name: "Star B", x: canvas.width*0.7, y: canvas.height*0.25, size: 2, color: "rgba(180,220,255,0.9)" },
-                { name: "Star C", x: canvas.width*0.5, y: canvas.height*0.15, size: 2.5, color: "rgba(220,220,255,0.9)" }
-            ];
-            showArtificialMilkyWay = true;
-            showMessage("Deep Space objects detected!");
-        }, 10000);
-    } else {
-        artificialObjects = [];
-        showArtificialMilkyWay = false;
-        showMessage("Deep Sky view deactivated.");
-    }
-});
-
-startBtn.addEventListener("click", async ()=>{
-    try {
-        // Request access to the environment (back) camera
-        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-        
-        video.srcObject = stream;
-        video.style.display = "block";
-
-        // Hide start button and show AR control
-        startBtn.style.display = "none";
-        toggleBtn.style.display = "inline-block";
-
-    } catch (e) {
-        console.error("Camera access failed:", e);
-        // Show user-friendly error message
-        showMessage("Error: Camera access denied or not supported. Please allow camera permissions.");
-        
-        // Keep the start button visible so the user can retry
-        startBtn.style.display = "inline-block"; 
-    }
-});
-</script>
+    // --------- Initial small instruction overlay (removed on first click) ---------
+    const instr = document.createElement('div');
+    instr.style.position='absolute'; instr.style.left='12px'; instr.style.top='12px'; instr.style.zIndex=900; instr.style.color='#7ff';
+    instr.style.background='rgba(0,0,0,0.4)'; instr.style.padding='8px 12px'; instr.style.borderRadius='8px'; instr.style.border='1px solid rgba(255,255,255,0.04)';
+    instr.innerHTML = '<b>Click</b> a star to show info. <b>Drag</b> the info box and the star will follow. Drop near a partner to snap & orbit, or use <i>Go to Partner</i>.';
+    document.body.appendChild(instr);
+    function removeInstr(){ if(instr){ instr.remove(); window.removeEventListener('click', removeInstr); } }
+    window.addEventListener('click', removeInstr);
+  </script>
 </body>
 </html>
